@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RS Vision. Control Panel</title>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --panel: #151923;
+    --panel-2: #1d2230;
+    --border: #2a3142;
+    --text: #e8ecf4;
+    --muted: #8a94a8;
+    --accent: #f0b429;
+    --accent-2: #5aa6ff;
+    --success: #4ade80;
+    --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 13px;
+    overflow-y: auto;
+  }
+  .container { padding: 14px; }
+  h1 {
+    font-size: 14px;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .subtitle {
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  h2 {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 14px 0 6px 0;
+    padding-bottom: 3px;
+    border-bottom: 1px solid var(--border);
+  }
+  .status-bar {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    border-radius: 3px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 11px;
+  }
+  .status-bar .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #555;
+    margin-right: 6px;
+  }
+  .status-bar.active .dot { background: var(--success); }
+  .stage {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+  }
+  .stage-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .stage-title { font-weight: 600; font-size: 11px; }
+  .stage-body { padding-top: 4px; display: none; }
+  .stage.open .stage-body { display: block; }
+  .toggle {
+    position: relative;
+    width: 30px;
+    height: 16px;
+    background: #333a4d;
+    border-radius: 8px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: #666;
+    border-radius: 50%;
+    transition: transform 0.15s, background 0.15s;
+  }
+  .toggle.on { background: var(--accent); }
+  .toggle.on::after { transform: translateX(14px); background: #111; }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    gap: 8px;
+  }
+  .row label { font-size: 10px; color: var(--muted); min-width: 72px; }
+  .row input[type="range"] {
+    flex: 1;
+    height: 3px;
+    -webkit-appearance: none;
+    background: #333a4d;
+    border-radius: 2px;
+    outline: none;
+  }
+  .row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .row input[type="color"] {
+    width: 26px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid var(--border);
+    background: transparent;
+    border-radius: 2px;
+  }
+  .val {
+    font-size: 10px;
+    color: var(--text);
+    min-width: 36px;
+    text-align: right;
+  }
+  button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    transition: all 0.15s;
+  }
+  button:hover { background: #252b3d; border-color: var(--accent); }
+  button.primary {
+    background: var(--accent);
+    color: #111;
+    border-color: var(--accent);
+    font-weight: 700;
+  }
+  button.primary:hover { background: #ffc94a; }
+  button.danger { border-color: var(--danger); color: var(--danger); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  select {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 5px 6px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 10px;
+    width: 100%;
+  }
+  .preset-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+  .preset {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    padding: 6px 4px;
+    font-size: 9px;
+    text-align: center;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .preset:hover { border-color: var(--accent-2); }
+  .ramp-stop {
+    display: grid;
+    grid-template-columns: 35px 1fr 26px auto;
+    gap: 4px;
+    align-items: center;
+    padding: 2px 0;
+  }
+  .ramp-stop input[type="number"] {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 2px 4px;
+    font-size: 9px;
+    font-family: inherit;
+    width: 100%;
+    border-radius: 2px;
+  }
+  .ramp-stop .del {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 2px 4px;
+  }
+  .ramp-stop .del:hover { color: var(--danger); }
+  .ramp-preview {
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    margin: 4px 0;
+  }
+  .hint {
+    font-size: 9px;
+    color: var(--muted);
+    font-style: italic;
+    padding: 5px;
+    background: rgba(90, 166, 255, 0.05);
+    border-left: 2px solid var(--accent-2);
+    margin: 6px 0;
+  }
+  .source-thumb {
+    width: 100%;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    margin-top: 6px;
+    display: none;
+  }
+  .source-thumb.show { display: block; }
+  .bounds-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 4px;
+  }
+  .bounds-row input {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px;
+    font-size: 10px;
+    font-family: inherit;
+    width: 100%;
+    border-radius: 2px;
+  }
+  .bounds-label {
+    font-size: 9px;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 2px;
+  }
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>RS VISION ASSIST</h1>
+  <div class="subtitle">Real-time overlay. CRD-tuned.</div>
+
+  <!-- UNIFIED TARGET PICKER -->
+  <div class="status-bar" id="statusBar">
+    <div><span class="dot"></span><span id="statusText">No target</span></div>
+    <div id="fpsText" style="color: var(--muted);">—</div>
+  </div>
+
+  <h2>Target Window</h2>
+  <button id="refreshSources" style="width:100%;">Refresh window list</button>
+  <select id="sourceSelect" style="margin-top: 6px;">
+    <option value="">Select a window (or screen)...</option>
+  </select>
+  <img class="source-thumb" id="sourceThumb">
+
+  <div class="actions" style="margin-top: 8px;">
+    <button class="primary" id="startOverlay">Start overlay</button>
+    <button class="danger" id="stopOverlay" disabled>Stop overlay</button>
+  </div>
+
+  <div class="hint">
+    The overlay captures and auto-follows the selected window. Click-through is on. <strong style="color:var(--text);">Ctrl+Shift+F1</strong> toggles overlay visibility globally.
+  </div>
+
+  <!-- ADVANCED (collapsed by default) -->
+  <div class="stage" id="stage-advanced">
+    <div class="stage-header" style="cursor:pointer;" id="advancedToggle">
+      <span class="stage-title" style="color:var(--muted);">Advanced overlay settings ▸</span>
+    </div>
+    <div class="stage-body">
+      <div style="margin-top: 6px;">
+        <span class="bounds-label">Manual bounds (overrides auto-follow)</span>
+        <div class="bounds-row">
+          <input type="number" id="bx" placeholder="X" value="100">
+          <input type="number" id="by" placeholder="Y" value="100">
+          <input type="number" id="bw" placeholder="W" value="1280">
+          <input type="number" id="bh" placeholder="H" value="720">
+        </div>
+        <button id="applyBounds" style="width:100%; margin-top:4px;">Apply manual bounds</button>
+      </div>
+      <div style="margin-top: 8px;">
+        <label style="font-size: 10px; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer;">
+          <input type="checkbox" id="autoFollowToggle" checked>
+          Auto-follow target window (disable for static overlay)
+        </label>
+      </div>
+
+      <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);">
+        <span class="bounds-label">Tracking offsets (debug)</span>
+        <div class="hint" style="margin-top: 4px;">
+          If the overlay is misaligned by a fixed amount (e.g. 10px off on each side), enter manual offsets here. These are added to raw window bounds every tick.
+        </div>
+        <div class="bounds-row" style="margin-top: 4px;">
+          <input type="number" id="ox" placeholder="ΔX" value="7" step="1">
+          <input type="number" id="oy" placeholder="ΔY" value="0" step="1">
+          <input type="number" id="ow" placeholder="ΔW" value="-12" step="1">
+          <input type="number" id="oh" placeholder="ΔH" value="-7" step="1">
+        </div>
+        <button id="applyOffset" style="width:100%; margin-top:4px;">Apply offset</button>
+        <button id="resetOffset" style="width:100%; margin-top:4px;">Reset offsets to 0</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRESETS -->
+  <h2>Clinical Presets</h2>
+  <div class="preset-list">
+    <div class="preset" data-preset="off">Bypass</div>
+    <div class="preset" data-preset="by-high">High B/Y Contrast</div>
+    <div class="preset" data-preset="outline">Heavy Outline</div>
+    <div class="preset" data-preset="indoor">Indoor/Doors</div>
+    <div class="preset" data-preset="maze">Maze Mode</div>
+    <div class="preset" data-preset="by-subtle">Subtle B/Y</div>
+  </div>
+
+  <h2>Debug Presets <span style="color:var(--muted); text-transform:none; letter-spacing:0; font-weight:400;">(experimental)</span></h2>
+  <div class="preset-list">
+    <div class="preset" data-preset="crd-green">Hue Rotate</div>
+    <div class="preset" data-preset="crd-high">Rainbow Lum</div>
+  </div>
+
+  <h2>My Presets <span style="color:var(--muted); text-transform:none; letter-spacing:0; font-weight:400;">(saved)</span></h2>
+  <div id="customPresetList" style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px;"></div>
+  <div style="display: grid; grid-template-columns: 1fr auto; gap: 4px;">
+    <input type="text" id="presetNameInput" placeholder="Preset name..."
+      style="background: var(--panel); border: 1px solid var(--border); color: var(--text);
+             padding: 6px 8px; font-family: inherit; font-size: 10px; border-radius: 3px;">
+    <button class="primary" id="saveCustomPreset">Save current</button>
+  </div>
+
+  <h2>Pipeline</h2>
+
+  <!-- SMART BLUR -->
+  <div class="stage open" id="stage-blur">
+    <div class="stage-header">
+      <span class="stage-title">1. Smart Blur</span>
+      <div class="toggle on" data-toggle="blurOn"></div>
+    </div>
+    <div class="stage-body">
+      <div class="row">
+        <label>Radius</label>
+        <input type="range" min="0" max="8" step="1" value="3" data-p="blurRadius">
+        <span class="val" data-v="blurRadius">3</span>
+      </div>
+      <div class="row">
+        <label>Edge preserve</label>
+        <input type="range" min="0.01" max="0.5" step="0.01" value="0.12" data-p="blurSigma">
+        <span class="val" data-v="blurSigma">0.12</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SOBEL OUTLINES -->
+  <div class="stage open" id="stage-edge">
+    <div class="stage-header">
+      <span class="stage-title">2. Sobel Outlines</span>
+      <div class="toggle on" data-toggle="edgeOn"></div>
+    </div>
+    <div class="stage-body">
+      <div class="row">
+        <label>Threshold</label>
+        <input type="range" min="0" max="1" step="0.01" value="0.15" data-p="edgeThreshold">
+        <span class="val" data-v="edgeThreshold">0.15</span>
+      </div>
+      <div class="row">
+        <label>Thickness</label>
+        <input type="range" min="1" max="4" step="1" value="1" data-p="edgeThickness">
+        <span class="val" data-v="edgeThickness">1</span>
+      </div>
+      <div class="row">
+        <label>Strength</label>
+        <input type="range" min="0" max="1" step="0.01" value="1.0" data-p="edgeStrength">
+        <span class="val" data-v="edgeStrength">1.0</span>
+      </div>
+      <div class="row">
+        <label>Color</label>
+        <input type="color" value="#ffff00" data-p="edgeColor">
+        <span class="val" data-v="edgeColor">#ffff00</span>
+      </div>
+      <div class="row">
+        <label>Source</label>
+        <select data-p="edgeSource">
+          <option value="0">Luminance</option>
+          <option value="1">Chrominance</option>
+          <option value="2" selected>Both (max)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Mode</label>
+        <select data-p="edgeMode">
+          <option value="0">Overlay (add)</option>
+          <option value="1" selected>Replace where edge</option>
+          <option value="2">Outline only (black bg)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLOR RAMP -->
+  <div class="stage open" id="stage-ramp">
+    <div class="stage-header">
+      <span class="stage-title">3. Color Ramp</span>
+      <div class="toggle on" data-toggle="rampOn"></div>
+    </div>
+    <div class="stage-body">
+      <div class="row">
+        <label>Driver</label>
+        <select data-p="rampDriver">
+          <option value="0" selected>Luminance</option>
+          <option value="1">Hue</option>
+          <option value="2">Saturation</option>
+          <option value="3">Red channel</option>
+          <option value="4">Green channel</option>
+          <option value="5">Blue channel</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Mix</label>
+        <input type="range" min="0" max="1" step="0.01" value="1.0" data-p="rampMix">
+        <span class="val" data-v="rampMix">1.0</span>
+      </div>
+      <div class="row">
+        <label>Contrast</label>
+        <input type="range" min="0.5" max="3" step="0.05" value="1.0" data-p="rampContrast">
+        <span class="val" data-v="rampContrast">1.0</span>
+      </div>
+      <div class="ramp-preview" id="rampPreview"></div>
+      <div id="rampStops"></div>
+      <button id="addStop" style="width:100%; margin-top:4px;">+ Add stop</button>
+    </div>
+  </div>
+
+  <h2>Global</h2>
+  <div class="row">
+    <label>Brightness</label>
+    <input type="range" min="-0.5" max="0.5" step="0.01" value="0" data-p="brightness">
+    <span class="val" data-v="brightness">0</span>
+  </div>
+  <div class="row">
+    <label>Contrast</label>
+    <input type="range" min="0.5" max="2.5" step="0.01" value="1" data-p="contrast">
+    <span class="val" data-v="contrast">1</span>
+  </div>
+  <div class="row">
+    <label>Saturation</label>
+    <input type="range" min="0" max="2" step="0.01" value="1" data-p="saturation">
+    <span class="val" data-v="saturation">1</span>
+  </div>
+
+  <h2>Config</h2>
+  <div class="actions">
+    <button id="exportCfg">Export settings</button>
+    <button id="importCfg">Import settings</button>
+  </div>
+</div>
+
+<script>
+const { ipcRenderer } = require('electron');
+const fs = require('fs');
+
+// ============================================================================
+// STATE (mirrors overlay's VisionFilter defaults)
+// ============================================================================
+const state = {
+  blurOn: true, blurRadius: 3, blurSigma: 0.12,
+  edgeOn: true, edgeThreshold: 0.15, edgeThickness: 1, edgeStrength: 1.0,
+  edgeColor: [1, 1, 0], edgeSource: 2, edgeMode: 1,
+  rampOn: true, rampDriver: 0, rampMix: 1.0, rampContrast: 1.0,
+  brightness: 0, contrast: 1, saturation: 1,
+};
+let rampStops = [
+  { pos: 0.0, color: [0.04, 0.06, 0.25] },
+  { pos: 0.35, color: [0.25, 0.35, 0.65] },
+  { pos: 0.65, color: [0.75, 0.70, 0.35] },
+  { pos: 1.0, color: [1.0, 0.95, 0.55] },
+];
+
+let selectedSourceId = null;
+let overlayOpen = false;
+let tracking = false;
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+function hexToRgb(hex) {
+  const m = hex.replace('#', '');
+  return [
+    parseInt(m.substring(0, 2), 16) / 255,
+    parseInt(m.substring(2, 4), 16) / 255,
+    parseInt(m.substring(4, 6), 16) / 255,
+  ];
+}
+function rgbToHex(rgb) {
+  const h = v => Math.round(v * 255).toString(16).padStart(2, '0');
+  return '#' + h(rgb[0]) + h(rgb[1]) + h(rgb[2]);
+}
+
+function pushSettings() {
+  ipcRenderer.invoke('set-settings', { ...state, rampStops });
+}
+
+// ============================================================================
+// UI WIRING
+// ============================================================================
+document.querySelectorAll('[data-toggle]').forEach(el => {
+  el.addEventListener('click', () => {
+    const key = el.dataset.toggle;
+    state[key] = !state[key];
+    el.classList.toggle('on', state[key]);
+    pushSettings();
+  });
+});
+
+document.querySelectorAll('[data-p]').forEach(el => {
+  const key = el.dataset.p;
+  if (el.type === 'range' || el.type === 'number') {
+    el.value = state[key];
+    const valEl = document.querySelector(`[data-v="${key}"]`);
+    if (valEl) valEl.textContent = state[key];
+    el.addEventListener('input', () => {
+      state[key] = parseFloat(el.value);
+      if (valEl) valEl.textContent = el.value;
+      pushSettings();
+    });
+  } else if (el.tagName === 'SELECT') {
+    el.value = state[key];
+    el.addEventListener('change', () => {
+      state[key] = parseInt(el.value);
+      pushSettings();
+    });
+  } else if (el.type === 'color') {
+    el.value = rgbToHex(state[key]);
+    const valEl = document.querySelector(`[data-v="${key}"]`);
+    if (valEl) valEl.textContent = el.value;
+    el.addEventListener('input', () => {
+      state[key] = hexToRgb(el.value);
+      if (valEl) valEl.textContent = el.value;
+      pushSettings();
+    });
+  }
+});
+
+// RAMP STOPS
+function renderRampStops() {
+  const container = document.getElementById('rampStops');
+  container.innerHTML = '';
+  rampStops.forEach((stop, i) => {
+    const row = document.createElement('div');
+    row.className = 'ramp-stop';
+    row.innerHTML = `
+      <input type="number" min="0" max="1" step="0.01" value="${stop.pos.toFixed(2)}">
+      <input type="range" min="0" max="1" step="0.01" value="${stop.pos}">
+      <input type="color" value="${rgbToHex(stop.color)}">
+      <button class="del">×</button>
+    `;
+    const [num, range, color, del] = row.children;
+    num.addEventListener('input', () => {
+      rampStops[i].pos = Math.max(0, Math.min(1, parseFloat(num.value) || 0));
+      range.value = rampStops[i].pos;
+      updateRampPreview(); pushSettings();
+    });
+    range.addEventListener('input', () => {
+      rampStops[i].pos = parseFloat(range.value);
+      num.value = rampStops[i].pos.toFixed(2);
+      updateRampPreview(); pushSettings();
+    });
+    color.addEventListener('input', () => {
+      rampStops[i].color = hexToRgb(color.value);
+      updateRampPreview(); pushSettings();
+    });
+    del.addEventListener('click', () => {
+      if (rampStops.length > 2) {
+        rampStops.splice(i, 1);
+        renderRampStops(); updateRampPreview(); pushSettings();
+      }
+    });
+    container.appendChild(row);
+  });
+}
+function updateRampPreview() {
+  const sorted = [...rampStops].sort((a, b) => a.pos - b.pos);
+  const gradient = sorted.map(s => `${rgbToHex(s.color)} ${(s.pos * 100).toFixed(0)}%`).join(', ');
+  document.getElementById('rampPreview').style.background = `linear-gradient(to right, ${gradient})`;
+}
+document.getElementById('addStop').addEventListener('click', () => {
+  if (rampStops.length >= 8) return;
+  rampStops.push({ pos: 0.5, color: [0.5, 0.5, 0.5] });
+  renderRampStops(); updateRampPreview(); pushSettings();
+});
+renderRampStops();
+updateRampPreview();
+
+// ============================================================================
+// PRESETS
+// ============================================================================
+const PRESETS = {
+  off: { blurOn: false, edgeOn: false, rampOn: false, brightness: 0, contrast: 1, saturation: 1 },
+
+  // -- CLINICAL (recommended) --
+  'by-high': {
+    // Pure 2-color blue->yellow ramp with cranked contrast. The primary recommendation for CRD.
+    blurOn: true, blurRadius: 3, blurSigma: 0.10,
+    edgeOn: true, edgeThreshold: 0.10, edgeThickness: 2, edgeStrength: 1.0,
+    edgeColor: [1, 1, 0.4], edgeSource: 2, edgeMode: 0,
+    rampOn: true, rampDriver: 0, rampMix: 1.0, rampContrast: 1.8,
+    contrast: 1.2, saturation: 0.6,
+  },
+  'by-subtle': {
+    // Same axis but gentler. For situations where the high-contrast version feels overwhelming.
+    blurOn: true, blurRadius: 2, blurSigma: 0.12,
+    edgeOn: true, edgeThreshold: 0.14, edgeThickness: 1, edgeStrength: 0.7,
+    edgeColor: [1, 1, 0.4], edgeSource: 2, edgeMode: 0,
+    rampOn: true, rampDriver: 0, rampMix: 0.6, rampContrast: 1.2,
+    contrast: 1.1, saturation: 0.8,
+  },
+  outline: {
+    // Edges-only emphasis. Keep the original colors, just add thick yellow outlines.
+    blurOn: true, blurRadius: 2, blurSigma: 0.12,
+    edgeOn: true, edgeThreshold: 0.10, edgeThickness: 2, edgeStrength: 1.0,
+    edgeColor: [1, 1, 0], edgeSource: 2, edgeMode: 0,
+    rampOn: false, contrast: 1.1,
+  },
+  indoor: {
+    // Lifts shadows so doors/doorways don't vanish into dark walls. B/Y axis with brightness lift.
+    blurOn: true, blurRadius: 2, blurSigma: 0.08,
+    edgeOn: true, edgeThreshold: 0.10, edgeThickness: 2, edgeStrength: 1.0,
+    edgeColor: [1, 1, 0.4], edgeSource: 2, edgeMode: 1,
+    rampOn: true, rampDriver: 0, rampMix: 0.8, rampContrast: 1.4,
+    brightness: 0.12, contrast: 1.1,
+  },
+  maze: {
+    // The nuclear option. Pure line-art view. For invisible-door events.
+    blurOn: false,
+    edgeOn: true, edgeThreshold: 0.04, edgeThickness: 2, edgeStrength: 1.0,
+    edgeColor: [1, 1, 0], edgeSource: 2, edgeMode: 2,
+    rampOn: false, contrast: 1.5,
+  },
+
+  // -- DEBUG (experimental) --
+  'crd-green': {
+    blurOn: true, blurRadius: 2, blurSigma: 0.15,
+    edgeOn: true, edgeThreshold: 0.12, edgeThickness: 1, edgeStrength: 0.8,
+    edgeColor: [1, 1, 0], edgeSource: 2, edgeMode: 0,
+    rampOn: true, rampDriver: 1, rampMix: 0.7, rampContrast: 1.2,
+  },
+  'crd-high': {
+    blurOn: true, blurRadius: 3, blurSigma: 0.10,
+    edgeOn: true, edgeThreshold: 0.08, edgeThickness: 2, edgeStrength: 1.0,
+    edgeColor: [1, 1, 0], edgeSource: 2, edgeMode: 0,
+    rampOn: true, rampDriver: 0, rampMix: 1.0, rampContrast: 1.6,
+    contrast: 1.3, saturation: 1.2,
+  },
+};
+const PRESET_RAMPS = {
+  // CLINICAL. All B/Y axis.
+  'by-high': [
+    { pos: 0.0, color: [0.02, 0.04, 0.25] },   // deep blue
+    { pos: 0.5, color: [0.35, 0.35, 0.45] },   // neutral mid
+    { pos: 1.0, color: [1.0, 0.95, 0.40] },    // saturated yellow
+  ],
+  'by-subtle': [
+    { pos: 0.0, color: [0.08, 0.12, 0.30] },
+    { pos: 0.4, color: [0.30, 0.35, 0.55] },
+    { pos: 0.7, color: [0.75, 0.70, 0.45] },
+    { pos: 1.0, color: [1.0, 0.95, 0.60] },
+  ],
+  indoor: [
+    { pos: 0.0, color: [0.15, 0.12, 0.35] },   // lifted shadows, still blue
+    { pos: 0.35, color: [0.35, 0.35, 0.55] },
+    { pos: 0.7, color: [0.85, 0.75, 0.40] },
+    { pos: 1.0, color: [1.0, 0.95, 0.60] },
+  ],
+
+  // DEBUG. Kept for experimentation.
+  'crd-green': [
+    { pos: 0.0, color: [1, 0, 0] },
+    { pos: 0.15, color: [1, 0.6, 0] },
+    { pos: 0.25, color: [1, 1, 0] },
+    { pos: 0.35, color: [0, 0.5, 1] },
+    { pos: 0.5, color: [0, 0.8, 1] },
+    { pos: 0.65, color: [0.3, 0.3, 1] },
+    { pos: 0.85, color: [1, 0, 1] },
+    { pos: 1.0, color: [1, 0, 0] },
+  ],
+  'crd-high': [
+    { pos: 0.0, color: [0, 0, 0.2] },
+    { pos: 0.3, color: [0.1, 0.3, 0.8] },
+    { pos: 0.55, color: [1, 0.8, 0.1] },
+    { pos: 0.8, color: [1, 1, 0.7] },
+    { pos: 1.0, color: [1, 1, 1] },
+  ],
+};
+
+function applyPreset(name) {
+  const p = PRESETS[name];
+  if (!p) return;
+  Object.assign(state, p);
+  if (PRESET_RAMPS[name]) rampStops = JSON.parse(JSON.stringify(PRESET_RAMPS[name]));
+  syncUI();
+  pushSettings();
+}
+
+function syncUI() {
+  document.querySelectorAll('[data-toggle]').forEach(el => {
+    el.classList.toggle('on', state[el.dataset.toggle]);
+  });
+  document.querySelectorAll('[data-p]').forEach(el => {
+    const key = el.dataset.p;
+    if (el.type === 'range' || el.type === 'number') {
+      el.value = state[key];
+      const v = document.querySelector(`[data-v="${key}"]`);
+      if (v) v.textContent = state[key];
+    } else if (el.tagName === 'SELECT') {
+      el.value = state[key];
+    } else if (el.type === 'color') {
+      el.value = rgbToHex(state[key]);
+      const v = document.querySelector(`[data-v="${key}"]`);
+      if (v) v.textContent = el.value;
+    }
+  });
+  renderRampStops();
+  updateRampPreview();
+}
+
+document.querySelectorAll('.preset').forEach(el => {
+  el.addEventListener('click', () => applyPreset(el.dataset.preset));
+});
+
+// ============================================================================
+// CUSTOM PRESETS (saved to disk)
+// ============================================================================
+let customPresets = {};
+let defaultPresetName = null;
+
+async function loadCustomPresets() {
+  const data = await ipcRenderer.invoke('presets-list');
+  customPresets = data.presets || {};
+  defaultPresetName = data.defaultPreset || null;
+  renderCustomPresets();
+}
+
+function renderCustomPresets() {
+  const container = document.getElementById('customPresetList');
+  container.innerHTML = '';
+  const names = Object.keys(customPresets).sort();
+  if (names.length === 0) {
+    container.innerHTML = '<div style="font-size:10px; color:var(--muted); padding:4px;">No saved presets yet.</div>';
+    return;
+  }
+  names.forEach(name => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 4px; align-items: center;';
+    const isDefault = name === defaultPresetName;
+    row.innerHTML = `
+      <span title="${isDefault ? 'Default on startup' : 'Click ★ to set as default'}" style="cursor:pointer; width: 16px; text-align: center; color: ${isDefault ? 'var(--accent)' : 'var(--muted)'};">${isDefault ? '★' : '☆'}</span>
+      <button style="text-align:left; padding:5px 8px;" title="Apply ${name}">${name}</button>
+      <button style="padding: 4px 6px; font-size: 9px;" title="Overwrite with current settings">⤓</button>
+      <button style="padding: 4px 6px; font-size: 9px;" title="Export to file">⬇</button>
+      <button style="padding: 4px 6px; font-size: 9px; color: var(--danger); border-color: var(--border);" title="Delete">×</button>
+    `;
+    const [star, applyBtn, overwriteBtn, exportBtn, deleteBtn] = row.children;
+
+    star.addEventListener('click', async () => {
+      const newDefault = isDefault ? null : name;
+      await ipcRenderer.invoke('presets-set-default', newDefault);
+      defaultPresetName = newDefault;
+      renderCustomPresets();
+    });
+
+    applyBtn.addEventListener('click', () => applyCustomPreset(name));
+
+    overwriteBtn.addEventListener('click', async () => {
+      if (!confirm(`Overwrite "${name}" with current settings?`)) return;
+      await ipcRenderer.invoke('presets-save', name, { state: { ...state }, rampStops });
+      await loadCustomPresets();
+    });
+
+    exportBtn.addEventListener('click', () => {
+      const cfg = customPresets[name];
+      const blob = new Blob([JSON.stringify({ name, ...cfg }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rs-vision-${name.replace(/[^a-z0-9]+/gi, '-')}.json`;
+      a.click();
+    });
+
+    deleteBtn.addEventListener('click', async () => {
+      if (!confirm(`Delete preset "${name}"?`)) return;
+      await ipcRenderer.invoke('presets-delete', name);
+      await loadCustomPresets();
+    });
+
+    container.appendChild(row);
+  });
+}
+
+function applyCustomPreset(name) {
+  const cfg = customPresets[name];
+  if (!cfg) return;
+  Object.assign(state, cfg.state);
+  if (cfg.rampStops) rampStops = JSON.parse(JSON.stringify(cfg.rampStops));
+  syncUI();
+  pushSettings();
+}
+
+document.getElementById('saveCustomPreset').addEventListener('click', async () => {
+  const input = document.getElementById('presetNameInput');
+  const name = input.value.trim();
+  if (!name) {
+    alert('Give the preset a name first.');
+    input.focus();
+    return;
+  }
+  if (customPresets[name] && !confirm(`"${name}" already exists. Overwrite?`)) return;
+  await ipcRenderer.invoke('presets-save', name, { state: { ...state }, rampStops });
+  input.value = '';
+  await loadCustomPresets();
+});
+
+document.getElementById('presetNameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('saveCustomPreset').click();
+});
+
+// Load on startup, and auto-apply default preset if one is set.
+loadCustomPresets().then(() => {
+  if (defaultPresetName && customPresets[defaultPresetName]) {
+    applyCustomPreset(defaultPresetName);
+  }
+});
+
+// ============================================================================
+// SOURCE SELECTION + UNIFIED TARGET
+// ============================================================================
+// desktopCapturer source ids on Windows look like "window:HWND:0" or "screen:N:0".
+// Extract the HWND so we can hand it to node-window-manager for tracking.
+function parseHwndFromSourceId(sourceId) {
+  if (!sourceId) return null;
+  const m = sourceId.match(/^window:(\d+):/);
+  return m ? parseInt(m[1]) : null;
+}
+
+async function refreshSources() {
+  const sources = await ipcRenderer.invoke('get-sources');
+  const select = document.getElementById('sourceSelect');
+  select.innerHTML = '<option value="">Select a window (or screen)...</option>';
+
+  // Sort: windows first with RuneLite/RuneScape at the top, then other windows, then screens.
+  const rsMatch = /runelite|runescape|old school/i;
+  const scored = sources.map(s => ({
+    ...s,
+    isScreen: s.id.startsWith('screen:'),
+    isRS: rsMatch.test(s.name),
+  }));
+  scored.sort((a, b) => {
+    if (a.isRS !== b.isRS) return a.isRS ? -1 : 1;
+    if (a.isScreen !== b.isScreen) return a.isScreen ? 1 : -1;
+    return a.name.localeCompare(b.name);
+  });
+
+  scored.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    const prefix = s.isRS ? '★ ' : (s.isScreen ? '[Screen] ' : '');
+    opt.textContent = prefix + s.name;
+    opt.dataset.thumbnail = s.thumbnail;
+    select.appendChild(opt);
+  });
+
+  // Auto-select if there's exactly one RuneLite window. Saves a click in the common case.
+  const rsWindows = scored.filter(s => s.isRS && !s.isScreen);
+  if (rsWindows.length === 1) {
+    select.value = rsWindows[0].id;
+    // Trigger change event so thumbnail updates and live-swap fires if overlay is running.
+    select.dispatchEvent(new Event('change'));
+  }
+}
+
+document.getElementById('refreshSources').addEventListener('click', refreshSources);
+
+document.getElementById('sourceSelect').addEventListener('change', e => {
+  const opt = e.target.selectedOptions[0];
+  selectedSourceId = e.target.value || null;
+  const thumb = document.getElementById('sourceThumb');
+  if (opt && opt.dataset.thumbnail) {
+    thumb.src = opt.dataset.thumbnail;
+    thumb.classList.add('show');
+  } else {
+    thumb.classList.remove('show');
+  }
+
+  // If overlay is already running, live-swap the source and retarget tracking.
+  if (selectedSourceId && overlayOpen) {
+    ipcRenderer.invoke('set-source', selectedSourceId);
+    document.getElementById('statusBar').classList.add('active');
+    document.getElementById('statusText').textContent = 'Streaming';
+    retargetTracking();
+  }
+});
+
+// Advanced panel toggle
+document.getElementById('advancedToggle').addEventListener('click', () => {
+  const stage = document.getElementById('stage-advanced');
+  stage.classList.toggle('open');
+  const title = stage.querySelector('.stage-title');
+  title.textContent = stage.classList.contains('open')
+    ? 'Advanced overlay settings ▾'
+    : 'Advanced overlay settings ▸';
+});
+
+// ============================================================================
+// TRACKING (auto-derived from selected source)
+// ============================================================================
+async function retargetTracking() {
+  // Called after source changes or overlay starts. Auto-follow if user hasn't disabled it.
+  const autoFollow = document.getElementById('autoFollowToggle').checked;
+  if (!autoFollow) {
+    await ipcRenderer.invoke('stop-tracking');
+    tracking = false;
+    return;
+  }
+
+  const hwnd = parseHwndFromSourceId(selectedSourceId);
+  if (!hwnd) {
+    // Selected source is a screen, not a window. Nothing to track.
+    await ipcRenderer.invoke('stop-tracking');
+    tracking = false;
+    return;
+  }
+
+  // Ask main to snap overlay bounds to this window immediately, then start polling.
+  const ok = await ipcRenderer.invoke('start-tracking', hwnd);
+  tracking = !!ok;
+}
+
+document.getElementById('autoFollowToggle').addEventListener('change', e => {
+  if (overlayOpen) retargetTracking();
+});
+
+// ============================================================================
+// MANUAL TRACKING OFFSETS (debug)
+// ============================================================================
+async function pushOffset() {
+  const offset = {
+    x: parseFloat(document.getElementById('ox').value) || 0,
+    y: parseFloat(document.getElementById('oy').value) || 0,
+    w: parseFloat(document.getElementById('ow').value) || 0,
+    h: parseFloat(document.getElementById('oh').value) || 0,
+  };
+  await ipcRenderer.invoke('set-manual-offset', offset);
+}
+
+document.getElementById('applyOffset').addEventListener('click', pushOffset);
+
+document.getElementById('resetOffset').addEventListener('click', async () => {
+  document.getElementById('ox').value = 0;
+  document.getElementById('oy').value = 0;
+  document.getElementById('ow').value = 0;
+  document.getElementById('oh').value = 0;
+  await pushOffset();
+});
+
+// Load current offsets from main on startup.
+ipcRenderer.invoke('get-manual-offset').then(offset => {
+  if (!offset) return;
+  document.getElementById('ox').value = offset.x || 0;
+  document.getElementById('oy').value = offset.y || 0;
+  document.getElementById('ow').value = offset.w || 0;
+  document.getElementById('oh').value = offset.h || 0;
+});
+
+// ============================================================================
+// OVERLAY CONTROL
+// ============================================================================
+document.getElementById('startOverlay').addEventListener('click', async () => {
+  if (!selectedSourceId) {
+    alert('Pick a target window first.');
+    return;
+  }
+
+  // Start overlay. Use manual bounds as initial position, tracking will snap it.
+  const bounds = {
+    x: parseInt(document.getElementById('bx').value) || 100,
+    y: parseInt(document.getElementById('by').value) || 100,
+    width: parseInt(document.getElementById('bw').value) || 1280,
+    height: parseInt(document.getElementById('bh').value) || 720,
+  };
+  await ipcRenderer.invoke('open-overlay', bounds);
+  overlayOpen = true;
+  document.getElementById('startOverlay').disabled = true;
+  document.getElementById('stopOverlay').disabled = false;
+
+  // Short delay for overlay window to finish initializing, then push source + settings + start tracking.
+  setTimeout(async () => {
+    await ipcRenderer.invoke('set-source', selectedSourceId);
+    pushSettings();
+    await retargetTracking();
+  }, 500);
+
+  document.getElementById('statusBar').classList.add('active');
+  document.getElementById('statusText').textContent = 'Streaming';
+});
+
+document.getElementById('stopOverlay').addEventListener('click', async () => {
+  await ipcRenderer.invoke('stop-tracking');
+  await ipcRenderer.invoke('close-overlay');
+  overlayOpen = false;
+  tracking = false;
+  document.getElementById('startOverlay').disabled = false;
+  document.getElementById('stopOverlay').disabled = true;
+  document.getElementById('statusBar').classList.remove('active');
+  document.getElementById('statusText').textContent = 'Stopped';
+});
+
+document.getElementById('applyBounds').addEventListener('click', async () => {
+  const bounds = {
+    x: parseInt(document.getElementById('bx').value) || 0,
+    y: parseInt(document.getElementById('by').value) || 0,
+    width: parseInt(document.getElementById('bw').value) || 1280,
+    height: parseInt(document.getElementById('bh').value) || 720,
+  };
+  // Manual bounds implies user wants to pin overlay; turn off auto-follow.
+  document.getElementById('autoFollowToggle').checked = false;
+  await ipcRenderer.invoke('stop-tracking');
+  tracking = false;
+  ipcRenderer.invoke('set-overlay-bounds', bounds);
+});
+
+// ============================================================================
+// CONFIG I/O
+// ============================================================================
+document.getElementById('exportCfg').addEventListener('click', () => {
+  const cfg = { state, rampStops };
+  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rs-vision-preset.json';
+  a.click();
+});
+document.getElementById('importCfg').addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json';
+  input.onchange = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+      try {
+        const cfg = JSON.parse(ev.target.result);
+        Object.assign(state, cfg.state);
+        if (cfg.rampStops) rampStops = cfg.rampStops;
+        syncUI();
+        pushSettings();
+      } catch (err) { alert('Invalid preset file.'); }
+    };
+    r.readAsText(f);
+  };
+  input.click();
+});
+
+// ============================================================================
+// FPS DISPLAY
+// ============================================================================
+ipcRenderer.on && ipcRenderer.on('overlay-fps-report', (event, fps) => {
+  document.getElementById('fpsText').textContent = `${fps.toFixed(0)} fps`;
+});
+// Need a broadcast channel from main. Register handler on main that re-emits.
+// (Simpler: we listen for main-forwarded messages. See main.js overlay-fps handler if added.)
+
+// Initial
+refreshSources();
+</script>
+</body>
+</html>

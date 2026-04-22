@@ -1,0 +1,28 @@
+{
+  "name": "rs-vision-overlay",
+  "version": "0.1.0",
+  "description": "Real-time vision assist overlay for RuneScape. CRD-tuned filter stack.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "author": "ICraft Creative Solutions",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "node-window-manager": "^2.2.4"
+  },
+  "build": {
+    "appId": "com.icraft.rsvision",
+    "productName": "RS Vision Assist",
+    "directories": { "output": "dist" },
+    "files": ["src/**/*", "package.json"],
+    "win": {
+      "target": [{ "target": "portable", "arch": ["x64"] }]
+    }
+  }
+}

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>RS Vision Overlay</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: transparent;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    background: transparent;
+  }
+  #status {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    padding: 6px 12px;
+    background: rgba(0,0,0,0.85);
+    color: #f0b429;
+    font-family: monospace;
+    font-size: 12px;
+    border-radius: 3px;
+    pointer-events: none;
+    display: none;
+    border: 1px solid #2a3142;
+    max-width: 400px;
+  }
+  #status.show { display: block; }
+  #status.error { color: #ff6b6b; border-color: #ff6b6b; }
+  /* Debug border so the overlay window itself is visible even before capture starts. */
+  body.debug-frame {
+    border: 2px dashed rgba(240, 180, 41, 0.5);
+  }
+</style>
+</head>
+<body class="debug-frame">
+<canvas id="canvas"></canvas>
+<div id="status">RS Vision Overlay ready.</div>
+
+<script src="filter.js"></script>
+<script>
+const { ipcRenderer } = require('electron');
+const canvas = document.getElementById('canvas');
+const status = document.getElementById('status');
+
+const filter = new VisionFilter(canvas);
+let video = null;
+let stream = null;
+let currentSourceId = null;
+let frameCount = 0;
+let lastFpsUpdate = performance.now();
+let framesRendered = 0;
+let captureActive = false;
+// When frozen (e.g. during window drag), skip rendering so canvas keeps last frame.
+// Prevents flicker/stutter from setBounds-driven DWM composition during rapid window moves.
+let frozen = false;
+
+function showStatus(msg, opts = {}) {
+  status.textContent = msg;
+  status.classList.add('show');
+  status.classList.toggle('error', !!opts.error);
+  if (!opts.persist) {
+    setTimeout(() => status.classList.remove('show'), opts.duration || 3000);
+  }
+  console.log('[overlay]', msg);
+}
+
+async function setSource(sourceId) {
+  if (currentSourceId === sourceId && stream) return;
+  currentSourceId = sourceId;
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+
+  showStatus('Requesting capture for source ' + sourceId.substring(0, 20) + '...', { persist: true });
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: sourceId,
+          minWidth: 640,
+          maxWidth: 3840,
+          minHeight: 480,
+          maxHeight: 2160,
+          maxFrameRate: 60,
+        },
+      },
+    });
+
+    if (!video) {
+      video = document.createElement('video');
+      video.autoplay = true;
+      video.muted = true;
+      video.playsInline = true;
+    }
+    video.srcObject = stream;
+    await video.play();
+    captureActive = true;
+    // Hide debug frame once capture is confirmed working
+    document.body.classList.remove('debug-frame');
+    showStatus(`Capture live: ${video.videoWidth}x${video.videoHeight}`, { duration: 2500 });
+    startRenderLoop();
+  } catch (err) {
+    captureActive = false;
+    console.error('Capture failed:', err);
+    showStatus('CAPTURE FAILED: ' + err.message, { error: true, persist: true });
+  }
+}
+
+function startRenderLoop() {
+  function renderOnce() {
+    if (frozen) return; // keep showing last frame while window is being dragged
+    if (video && video.readyState >= 2) {
+      filter.uploadSource(video, true);
+      filter.render();
+      framesRendered++;
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsUpdate > 1000) {
+        const fps = frameCount / ((now - lastFpsUpdate) / 1000);
+        ipcRenderer.invoke('overlay-fps', fps).catch(() => {});
+        frameCount = 0;
+        lastFpsUpdate = now;
+      }
+    }
+  }
+
+  if (video && 'requestVideoFrameCallback' in video) {
+    const cb = () => {
+      renderOnce();
+      if (captureActive) video.requestVideoFrameCallback(cb);
+    };
+    video.requestVideoFrameCallback(cb);
+  } else {
+    const loop = () => {
+      renderOnce();
+      if (captureActive) requestAnimationFrame(loop);
+    };
+    loop();
+  }
+
+  // Watchdog: if no frames render in 3s after capture starts, something is wrong.
+  setTimeout(() => {
+    if (captureActive && framesRendered === 0) {
+      showStatus('Capture started but no frames rendered. Check source is actually rendering (not minimized).', { error: true, persist: true });
+    }
+  }, 3000);
+}
+
+ipcRenderer.on('set-source', (event, sourceId) => {
+  setSource(sourceId);
+});
+
+ipcRenderer.on('set-settings', (event, settings) => {
+  filter.updateSettings(settings);
+});
+
+ipcRenderer.on('set-frozen', (event, value) => {
+  frozen = !!value;
+});
+
+showStatus('Overlay window ready. Select source in control panel.', { duration: 4000 });
+</script>
+</body>
+</html>
