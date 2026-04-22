@@ -4,5 +4,4 @@ src/main.js  - Migrate old 3-stage preset format to stack format on load.
 src/control.html  - Add drag-reorder, duplicate, delete, add-from-palette on stack stages.
 src/filter.js  - Add stage types: hue shift, luminance threshold, channel mixer, chroma keyer.
 src/filter.js  - Add group stages. Render children to sub-FBO, composite back with blend mode (Normal, Multiply, Screen, Overlay, Add, Subtract, Difference, Lighten, Darken) + mix. Groups nest.
-src/control.html  - Group UI: select range, group, ungroup, set blend mode + mix.
 src/main.js  - Group import/export as JSON.

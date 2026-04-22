@@ -335,6 +335,68 @@
     padding: 8px;
     margin-bottom: 8px;
   }
+
+  .stage-select {
+    margin: 0 2px 0 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .stage.group-stage {
+    background: #171e2a;
+    border-color: #3a4760;
+  }
+  .stage.group-stage > .stage-header .stage-title {
+    color: var(--accent-2);
+  }
+  .stage-children {
+    margin-top: 8px;
+    padding: 6px 6px 2px 6px;
+    border-left: 2px solid #3a4760;
+    border-radius: 2px;
+    background: rgba(0,0,0,0.15);
+  }
+  .stage-children:empty { display: none; }
+  .group-drop-zone {
+    font-size: 9px;
+    color: var(--muted);
+    font-style: italic;
+    padding: 6px;
+    margin-top: 4px;
+    border: 1px dashed var(--border);
+    border-radius: 2px;
+    text-align: center;
+  }
+  .group-drop-zone.drag-over {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(240, 180, 41, 0.05);
+  }
+  .group-add-palette {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 3px;
+    margin-top: 6px;
+  }
+  .group-add-palette .palette-item {
+    font-size: 9px;
+    padding: 4px 2px;
+  }
+
+  .selection-bar {
+    display: none;
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    padding: 6px 8px;
+    border-radius: 3px;
+    margin-bottom: 6px;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+  }
+  .selection-bar.show { display: flex; }
+  .selection-bar .count { color: var(--accent); font-weight: 700; }
+  .selection-bar .spacer { flex: 1; }
 </style>
 </head>
 <body>
@@ -456,6 +518,13 @@
     </div>
   </div>
 
+  <div class="selection-bar" id="selectionBar">
+    <span><span class="count" id="selectionCount">0</span> selected</span>
+    <div class="spacer"></div>
+    <button id="groupSelected" title="Wrap selected stages in a new group (must share a parent)">Group</button>
+    <button id="clearSelection">Clear</button>
+  </div>
+
   <div id="stackContainer"></div>
 
   <!-- CONFIG I/O -->
@@ -505,41 +574,145 @@ function pushStack() {
 }
 
 // ============================================================================
+// STAGE TREE HELPERS
+// ============================================================================
+const STAGE_TYPES = [
+  'blur', 'sobel', 'colorramp', 'colorAdjust',
+  'hueShift', 'lumThreshold', 'channelMixer', 'chromaKey', 'group',
+];
+const TYPE_LABELS = {
+  blur: 'Smart Blur',
+  sobel: 'Sobel Edges',
+  colorramp: 'Color Ramp',
+  colorAdjust: 'Color Adjust',
+  hueShift: 'Hue Shift',
+  lumThreshold: 'Lum Threshold',
+  channelMixer: 'Channel Mixer',
+  chromaKey: 'Chroma Key',
+  group: 'Group',
+};
+const TYPE_SHORT = {
+  blur: 'Blur', sobel: 'Sobel', colorramp: 'Ramp', colorAdjust: 'Adjust',
+  hueShift: 'Hue', lumThreshold: 'Thresh', channelMixer: 'Mixer',
+  chromaKey: 'Chroma', group: 'Group',
+};
+
+let selectedIds = new Set();
+
+function findPathById(id, stages = stack, prefix = []) {
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i];
+    const p = [...prefix, i];
+    if (s.id === id) return p;
+    if (s.type === 'group' && s.children) {
+      const nested = findPathById(id, s.children, p);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function parentArrayAt(path) {
+  let arr = stack;
+  for (let i = 0; i < path.length - 1; i++) arr = arr[path[i]].children;
+  return arr;
+}
+
+function stageAtPath(path) {
+  const parent = parentArrayAt(path);
+  return parent[path[path.length - 1]];
+}
+
+function removeById(id) {
+  const path = findPathById(id);
+  if (!path) return null;
+  const parent = parentArrayAt(path);
+  return parent.splice(path[path.length - 1], 1)[0];
+}
+
+function isAncestorOrSelf(ancestorPath, descendantPath) {
+  if (!ancestorPath || !descendantPath) return false;
+  if (ancestorPath.length > descendantPath.length) return false;
+  return ancestorPath.every((v, i) => v === descendantPath[i]);
+}
+
+function assignFreshIds(stage) {
+  stage.id = `stage_${nextClientStageId++}`;
+  if (stage.children) stage.children.forEach(assignFreshIds);
+}
+let nextClientStageId = 1000000;
+
+function collectIdsInTree(stage, out = []) {
+  out.push(stage.id);
+  if (stage.children) stage.children.forEach(c => collectIdsInTree(c, out));
+  return out;
+}
+
+function selectedSiblingPaths() {
+  // Return selected stage paths grouped by parent array identity.
+  // Returns { parent, indices: sorted number[], stages: stage[] } for the single
+  // shared parent, or null if selection is empty or spans multiple parents.
+  if (selectedIds.size === 0) return null;
+  let parentArr = null;
+  const indices = [];
+  const stages = [];
+  for (const id of selectedIds) {
+    const path = findPathById(id);
+    if (!path) continue;
+    const parent = parentArrayAt(path);
+    if (parentArr === null) parentArr = parent;
+    else if (parent !== parentArr) return null;
+    indices.push(path[path.length - 1]);
+    stages.push(parent[path[path.length - 1]]);
+  }
+  if (indices.length === 0) return null;
+  // Sort indices ascending and reorder stages to match
+  const sorted = indices.map((idx, i) => ({ idx, stage: stages[i] }))
+    .sort((a, b) => a.idx - b.idx);
+  return {
+    parent: parentArr,
+    indices: sorted.map(s => s.idx),
+    stages: sorted.map(s => s.stage),
+  };
+}
+
+// ============================================================================
 // STACK RENDERING
 // ============================================================================
 function renderStack() {
   const container = document.getElementById('stackContainer');
   container.innerHTML = '';
+  // Drop any selected IDs that no longer exist in the tree
+  for (const id of Array.from(selectedIds)) {
+    if (!findPathById(id)) selectedIds.delete(id);
+  }
+  renderStages(stack, container);
+  renderSelectionBar();
+}
 
-  stack.forEach((stage, index) => {
-    const el = createStageElement(stage, index);
-    container.appendChild(el);
+function renderStages(stages, container) {
+  stages.forEach((stage) => {
+    container.appendChild(createStageElement(stage));
   });
 }
 
-function createStageElement(stage, index) {
+function createStageElement(stage) {
   const div = document.createElement('div');
   div.className = 'stage open';
+  if (stage.type === 'group') div.classList.add('group-stage');
   div.dataset.stageId = stage.id;
-  div.dataset.index = index;
 
-  const typeLabel = {
-    blur: 'Smart Blur',
-    sobel: 'Sobel Edges',
-    colorramp: 'Color Ramp',
-    colorAdjust: 'Color Adjust',
-    hueShift: 'Hue Shift',
-    lumThreshold: 'Lum Threshold',
-    channelMixer: 'Channel Mixer',
-    chromaKey: 'Chroma Key',
-    group: 'Group',
-  }[stage.type] || stage.type;
+  const typeLabel = TYPE_LABELS[stage.type] || stage.type;
+  const isSelected = selectedIds.has(stage.id);
+  const isGroup = stage.type === 'group';
 
   div.innerHTML = `
     <div class="stage-header">
+      <input type="checkbox" class="stage-select" title="Select for grouping" ${isSelected ? 'checked' : ''}>
       <span class="stage-drag-handle">⋮⋮</span>
-      <span class="stage-title">${index + 1}. ${typeLabel}</span>
+      <span class="stage-title">${typeLabel}</span>
       <div class="stage-controls">
+        ${isGroup ? '<button class="icon-btn" data-action="ungroup" title="Ungroup (flatten children into parent)">⊟</button>' : ''}
         <div class="toggle ${stage.enabled ? 'on' : ''}" data-action="toggle"></div>
         <button class="icon-btn" data-action="duplicate" title="Duplicate">⎘</button>
         <button class="icon-btn danger" data-action="delete" title="Delete">×</button>
@@ -551,76 +724,131 @@ function createStageElement(stage, index) {
   const body = div.querySelector('.stage-body');
   body.appendChild(createStageControls(stage));
 
-  // Event handlers
-  div.querySelector('[data-action="toggle"]').addEventListener('click', () => {
+  // Selection checkbox
+  const checkbox = div.querySelector('.stage-select');
+  checkbox.addEventListener('mousedown', (e) => e.stopPropagation());
+  checkbox.addEventListener('click', (e) => e.stopPropagation());
+  checkbox.addEventListener('change', () => {
+    if (checkbox.checked) selectedIds.add(stage.id);
+    else selectedIds.delete(stage.id);
+    renderSelectionBar();
+  });
+
+  // Toggle / duplicate / delete
+  div.querySelector('[data-action="toggle"]').addEventListener('click', (e) => {
+    e.stopPropagation();
     stage.enabled = !stage.enabled;
     renderStack();
     pushStack();
   });
 
-  div.querySelector('[data-action="duplicate"]').addEventListener('click', () => {
+  div.querySelector('[data-action="duplicate"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const path = findPathById(stage.id);
+    if (!path) return;
     const copy = JSON.parse(JSON.stringify(stage));
-    copy.id = `stage_${Date.now()}`;
-    stack.splice(index + 1, 0, copy);
+    assignFreshIds(copy);
+    const parent = parentArrayAt(path);
+    parent.splice(path[path.length - 1] + 1, 0, copy);
     renderStack();
     pushStack();
   });
 
-  div.querySelector('[data-action="delete"]').addEventListener('click', () => {
-    if (confirm(`Delete ${typeLabel}?`)) {
-      stack.splice(index, 1);
+  div.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete ${typeLabel}${isGroup && stage.children.length ? ` and its ${stage.children.length} child stage(s)` : ''}?`)) return;
+    const removed = removeById(stage.id);
+    if (removed) collectIdsInTree(removed).forEach(id => selectedIds.delete(id));
+    renderStack();
+    pushStack();
+  });
+
+  if (isGroup) {
+    div.querySelector('[data-action="ungroup"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const path = findPathById(stage.id);
+      if (!path) return;
+      const parent = parentArrayAt(path);
+      const idx = path[path.length - 1];
+      const kids = stage.children || [];
+      parent.splice(idx, 1, ...kids);
+      selectedIds.delete(stage.id);
       renderStack();
       pushStack();
-    }
-  });
+    });
+  }
 
-  // Drag and drop - only from drag handle
+  // Drag and drop
   const dragHandle = div.querySelector('.stage-drag-handle');
-
-  dragHandle.addEventListener('mousedown', () => {
-    div.draggable = true;
-  });
+  dragHandle.addEventListener('mousedown', () => { div.draggable = true; });
 
   div.addEventListener('dragstart', e => {
-    if (!div.draggable) {
-      e.preventDefault();
-      return;
-    }
+    if (!div.draggable) { e.preventDefault(); return; }
+    e.stopPropagation();
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', index);
+    e.dataTransfer.setData('text/plain', stage.id);
     div.classList.add('dragging');
   });
 
   div.addEventListener('dragend', () => {
     div.draggable = false;
     div.classList.remove('dragging');
-    document.querySelectorAll('.stage').forEach(s => s.classList.remove('drag-over'));
+    clearDragOver();
   });
 
   div.addEventListener('dragover', e => {
+    // stopPropagation ensures a child stage's dragover does not also highlight the parent
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
+    clearDragOver(div);
     div.classList.add('drag-over');
-  });
-
-  div.addEventListener('dragleave', () => {
-    div.classList.remove('drag-over');
   });
 
   div.addEventListener('drop', e => {
     e.preventDefault();
+    e.stopPropagation();
     div.classList.remove('drag-over');
-    const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
-    const toIndex = index;
-    if (fromIndex !== toIndex) {
-      const [item] = stack.splice(fromIndex, 1);
-      stack.splice(toIndex, 0, item);
-      renderStack();
-      pushStack();
-    }
+    const fromId = e.dataTransfer.getData('text/plain');
+    if (!fromId || fromId === stage.id) return;
+    moveBefore(fromId, stage.id);
   });
 
   return div;
+}
+
+function clearDragOver(except) {
+  document.querySelectorAll('.drag-over').forEach(el => {
+    if (el !== except) el.classList.remove('drag-over');
+  });
+}
+
+function moveBefore(fromId, targetId) {
+  const fromPath = findPathById(fromId);
+  const targetPath = findPathById(targetId);
+  if (!fromPath || !targetPath) return;
+  if (isAncestorOrSelf(fromPath, targetPath)) return; // can't drop into own descendant
+  const moved = removeById(fromId);
+  const newTargetPath = findPathById(targetId);
+  if (!newTargetPath) return;
+  const parent = parentArrayAt(newTargetPath);
+  parent.splice(newTargetPath[newTargetPath.length - 1], 0, moved);
+  renderStack();
+  pushStack();
+}
+
+function moveIntoGroup(fromId, groupId) {
+  if (fromId === groupId) return;
+  const fromPath = findPathById(fromId);
+  const groupPath = findPathById(groupId);
+  if (!fromPath || !groupPath) return;
+  if (isAncestorOrSelf(fromPath, groupPath)) return;
+  const moved = removeById(fromId);
+  const group = stageAtPath(findPathById(groupId));
+  if (!group || group.type !== 'group') return;
+  group.children.push(moved);
+  renderStack();
+  pushStack();
 }
 
 function createStageControls(stage) {
@@ -797,6 +1025,9 @@ function createStageControls(stage) {
       break;
 
     case 'group':
+      const paletteHtml = STAGE_TYPES.map(t =>
+        `<div class="palette-item" data-stage="${t}">+ ${TYPE_SHORT[t]}</div>`
+      ).join('');
       container.innerHTML = `
         <div class="row">
           <label>Blend mode</label>
@@ -817,13 +1048,52 @@ function createStageControls(stage) {
           <input type="range" min="0" max="1" step="0.01" value="${stage.params.mix}" data-param="mix">
           <span class="val">${stage.params.mix}</span>
         </div>
-        <div class="hint">Groups not fully implemented in UI yet. Children: ${stage.children ? stage.children.length : 0}</div>
+        <div class="stage-children"></div>
+        <div class="group-drop-zone">Drop a stage here to add it to this group</div>
+        <div class="group-add-palette">${paletteHtml}</div>
       `;
+
+      const childContainer = container.querySelector('.stage-children');
+      const kids = stage.children || (stage.children = []);
+      renderStages(kids, childContainer);
+
+      // In-group add-from-palette
+      container.querySelectorAll('.group-add-palette .palette-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const type = item.dataset.stage;
+          kids.push(createStage(type));
+          renderStack();
+          pushStack();
+        });
+      });
+
+      // Drop zone: append dragged stage to this group's children
+      const dropZone = container.querySelector('.group-drop-zone');
+      dropZone.addEventListener('mousedown', (e) => e.stopPropagation());
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        clearDragOver(dropZone);
+        dropZone.classList.add('drag-over');
+      });
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('drag-over');
+        const fromId = e.dataTransfer.getData('text/plain');
+        if (!fromId) return;
+        moveIntoGroup(fromId, stage.id);
+      });
       break;
   }
 
-  // Wire up param changes
-  container.querySelectorAll('[data-param]').forEach(input => {
+  // Wire up param changes. Skip controls that live inside a nested child stage
+  // (groups embed children in the same container; those have their own wiring).
+  const ownParams = Array.from(container.querySelectorAll('[data-param]'))
+    .filter(el => !el.closest('.stage'));
+  ownParams.forEach(input => {
     const param = input.dataset.param;
 
     // Prevent drag from interfering with controls
@@ -862,8 +1132,10 @@ function createStageControls(stage) {
     });
   });
 
-  // Wire up ramp stop controls
-  container.querySelectorAll('[data-stop-idx]').forEach(input => {
+  // Wire up ramp stop controls (same nested-scoping caveat)
+  const ownStops = Array.from(container.querySelectorAll('[data-stop-idx]'))
+    .filter(el => !el.closest('.stage'));
+  ownStops.forEach(input => {
     const idx = parseInt(input.dataset.stopIdx);
     const param = input.dataset.stopParam;
 
@@ -920,16 +1192,56 @@ function createStageControls(stage) {
 }
 
 // ============================================================================
-// ADD STAGE PALETTE
+// ADD STAGE PALETTE (top level)
 // ============================================================================
-document.querySelectorAll('.palette-item').forEach(item => {
+document.querySelectorAll('.add-stage-panel .palette-item').forEach(item => {
   item.addEventListener('click', () => {
     const type = item.dataset.stage;
-    const newStage = createStage(type);
-    stack.push(newStage);
+    stack.push(createStage(type));
     renderStack();
     pushStack();
   });
+});
+
+// ============================================================================
+// SELECTION + GROUP/UNGROUP
+// ============================================================================
+function renderSelectionBar() {
+  const bar = document.getElementById('selectionBar');
+  const count = document.getElementById('selectionCount');
+  count.textContent = selectedIds.size;
+  bar.classList.toggle('show', selectedIds.size > 0);
+
+  const groupBtn = document.getElementById('groupSelected');
+  const siblings = selectedSiblingPaths();
+  // Need at least one selected stage that all share a parent to group.
+  const canGroup = !!siblings && siblings.stages.length >= 1;
+  groupBtn.disabled = !canGroup;
+  groupBtn.title = canGroup
+    ? 'Wrap selected stages in a new group'
+    : 'Select one or more stages that share the same parent';
+}
+
+document.getElementById('groupSelected').addEventListener('click', () => {
+  const sel = selectedSiblingPaths();
+  if (!sel) return;
+  const { parent, indices, stages } = sel;
+  // Remove selected stages from parent (highest index first to keep earlier indices valid)
+  const insertAt = indices[0];
+  for (let i = indices.length - 1; i >= 0; i--) parent.splice(indices[i], 1);
+  const group = createStage('group');
+  group.children = stages;
+  parent.splice(insertAt, 0, group);
+  // After grouping, clear the selection of the now-child stages and select the new group
+  stages.forEach(s => selectedIds.delete(s.id));
+  selectedIds.add(group.id);
+  renderStack();
+  pushStack();
+});
+
+document.getElementById('clearSelection').addEventListener('click', () => {
+  selectedIds.clear();
+  renderStack();
 });
 
 // ============================================================================
