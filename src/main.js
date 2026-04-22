@@ -103,6 +103,14 @@ ipcMain.handle('set-settings', (event, settings) => {
   return true;
 });
 
+// Control panel sends updated filter stack. Forward to overlay.
+ipcMain.handle('set-stack', (event, stack) => {
+  if (overlayWin) {
+    overlayWin.webContents.send('set-stack', stack);
+  }
+  return true;
+});
+
 // Control panel asks us to open the overlay.
 ipcMain.handle('open-overlay', (event, bounds) => {
   if (overlayWin) {
@@ -119,6 +127,13 @@ ipcMain.handle('close-overlay', () => {
     overlayWin = null;
   }
   stopTracking();
+  return true;
+});
+
+ipcMain.handle('force-overlay-refresh', () => {
+  if (overlayWin && overlayWin.webContents) {
+    overlayWin.webContents.send('force-refresh');
+  }
   return true;
 });
 
@@ -147,6 +162,7 @@ ipcMain.handle('start-tracking', (event, windowId) => {
   let failureCount = 0;
   let lastChangeMs = 0;
   let frozenDuringMove = false;
+  let lastBounds = null;
 
   trackingInterval = setInterval(() => {
     try {
@@ -163,6 +179,35 @@ ipcMain.handle('start-tracking', (event, windowId) => {
           return;
         }
         failureCount = 0;
+      }
+
+      // Check if target window or control panel has focus
+      let shouldShowOverlay = false;
+      try {
+        const activeWindow = windowManager.getActiveWindow();
+        if (activeWindow) {
+          const isTargetFocused = activeWindow.id === trackedId;
+          const isControlFocused = controlWin && controlWin.isFocused();
+          shouldShowOverlay = isTargetFocused || isControlFocused;
+        } else {
+          // No active window detected, keep overlay visible
+          shouldShowOverlay = true;
+        }
+      } catch (e) {
+        // Fallback: assume focused if we can't determine
+        shouldShowOverlay = true;
+      }
+
+      // Hide overlay when neither target nor control panel has focus
+      if (!shouldShowOverlay) {
+        if (overlayWin.isVisible()) {
+          overlayWin.hide();
+        }
+        return;
+      } else {
+        if (!overlayWin.isVisible()) {
+          overlayWin.show();
+        }
       }
 
       let rawBounds;
@@ -196,27 +241,54 @@ ipcMain.handle('start-tracking', (event, windowId) => {
           targetBounds.x !== bounds.x ||
           targetBounds.y !== bounds.y;
 
-        // Freeze overlay rendering during rapid movement. Shows last filtered frame
-        // statically instead of hiding or stuttering. Looks way better than trying
-        // to re-render during drag when setBounds/setPosition is causing DWM churn.
-        const moveFast = (now - lastChangeMs) < 50;
+        // Detect rapid movement (dragging)
+        const timeSinceLastChange = now - lastChangeMs;
+        const moveFast = timeSinceLastChange < 50;
+
+        // If moving fast, freeze rendering and batch position updates
         if (moveFast && !frozenDuringMove) {
           overlayWin.webContents.send('set-frozen', true);
           frozenDuringMove = true;
+          lastBounds = bounds;
         }
 
-        // setPosition + setSize separately is faster than setBounds on Windows.
-        try {
-          if (posChanged) overlayWin.setPosition(bounds.x, bounds.y);
-          if (sizeChanged) overlayWin.setSize(bounds.width, bounds.height);
-        } catch (e) {
-          try { overlayWin.setBounds(bounds); } catch (_) {}
+        // During fast movement, batch updates less frequently
+        if (frozenDuringMove) {
+          lastBounds = bounds;
+          // Only update position every 50ms during drag
+          if (timeSinceLastChange >= 50) {
+            try {
+              if (posChanged) overlayWin.setPosition(lastBounds.x, lastBounds.y, false);
+              if (sizeChanged) overlayWin.setSize(lastBounds.width, lastBounds.height, false);
+            } catch (e) {
+              try { overlayWin.setBounds(lastBounds, false); } catch (_) {}
+            }
+            targetBounds = { ...lastBounds };
+            lastChangeMs = now;
+          }
+        } else {
+          // Normal movement - update immediately
+          try {
+            if (posChanged) overlayWin.setPosition(bounds.x, bounds.y, false);
+            if (sizeChanged) overlayWin.setSize(bounds.width, bounds.height, false);
+          } catch (e) {
+            try { overlayWin.setBounds(bounds, false); } catch (_) {}
+          }
+          targetBounds = { ...bounds };
+          lastChangeMs = now;
         }
-
-        targetBounds = { ...bounds };
-        lastChangeMs = now;
-      } else if (frozenDuringMove && (now - lastChangeMs) > 100) {
-        // Movement stopped. Resume live rendering.
+      } else if (frozenDuringMove && (now - lastChangeMs) > 150) {
+        // Movement stopped. Apply final position and resume live rendering.
+        if (lastBounds) {
+          try {
+            overlayWin.setPosition(lastBounds.x, lastBounds.y, false);
+            overlayWin.setSize(lastBounds.width, lastBounds.height, false);
+          } catch (e) {
+            try { overlayWin.setBounds(lastBounds, false); } catch (_) {}
+          }
+          targetBounds = { ...lastBounds };
+          lastBounds = null;
+        }
         overlayWin.webContents.send('set-frozen', false);
         frozenDuringMove = false;
       }

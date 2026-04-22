@@ -67,22 +67,52 @@
     margin-right: 6px;
   }
   .status-bar.active .dot { background: var(--success); }
+
+  /* STACK STAGE UI */
   .stage {
     background: var(--panel-2);
     border: 1px solid var(--border);
     border-radius: 3px;
     padding: 8px 10px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+  }
+  .stage.dragging {
+    opacity: 0.5;
+  }
+  .stage.drag-over {
+    border-color: var(--accent);
+    border-style: dashed;
   }
   .stage-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
     margin-bottom: 4px;
   }
-  .stage-title { font-weight: 600; font-size: 11px; }
-  .stage-body { padding-top: 4px; display: none; }
+  .stage-drag-handle {
+    cursor: grab;
+    color: var(--muted);
+    font-size: 14px;
+    user-select: none;
+  }
+  .stage-drag-handle:active { cursor: grabbing; }
+  .stage-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 11px;
+  }
+  .stage-controls {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .stage-body {
+    padding-top: 6px;
+    padding-left: 18px;
+    display: none;
+  }
   .stage.open .stage-body { display: block; }
+
   .toggle {
     position: relative;
     width: 30px;
@@ -105,6 +135,19 @@
   }
   .toggle.on { background: var(--accent); }
   .toggle.on::after { transform: translateX(14px); background: #111; }
+
+  .icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 4px;
+    line-height: 1;
+  }
+  .icon-btn:hover { color: var(--text); }
+  .icon-btn.danger:hover { color: var(--danger); }
+
   .row {
     display: flex;
     align-items: center;
@@ -174,6 +217,24 @@
     font-size: 10px;
     width: 100%;
   }
+
+  .palette {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .palette-item {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 6px;
+    text-align: center;
+    font-size: 9px;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .palette-item:hover { border-color: var(--accent-2); }
+
   .preset-list {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -189,6 +250,7 @@
     cursor: pointer;
   }
   .preset:hover { border-color: var(--accent-2); }
+
   .ramp-stop {
     display: grid;
     grid-template-columns: 35px 1fr 26px auto;
@@ -219,6 +281,7 @@
     border: 1px solid var(--border);
     margin: 4px 0;
   }
+
   .hint {
     font-size: 9px;
     color: var(--muted);
@@ -236,6 +299,7 @@
     display: none;
   }
   .source-thumb.show { display: block; }
+
   .bounds-row {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr;
@@ -263,19 +327,28 @@
     gap: 4px;
     margin-top: 6px;
   }
+
+  .add-stage-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px;
+    margin-bottom: 8px;
+  }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>RS VISION ASSIST</h1>
-  <div class="subtitle">Real-time overlay. CRD-tuned.</div>
+  <div class="subtitle">Real-time overlay. CRD-tuned. Stack-based pipeline.</div>
 
-  <!-- UNIFIED TARGET PICKER -->
+  <!-- STATUS -->
   <div class="status-bar" id="statusBar">
     <div><span class="dot"></span><span id="statusText">No target</span></div>
     <div id="fpsText" style="color: var(--muted);">—</div>
   </div>
 
+  <!-- TARGET WINDOW -->
   <h2>Target Window</h2>
   <button id="refreshSources" style="width:100%;">Refresh window list</button>
   <select id="sourceSelect" style="margin-top: 6px;">
@@ -329,10 +402,18 @@
         <button id="applyOffset" style="width:100%; margin-top:4px;">Apply offset</button>
         <button id="resetOffset" style="width:100%; margin-top:4px;">Reset offsets to 0</button>
       </div>
+
+      <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);">
+        <span class="bounds-label">Debug: Capture refresh</span>
+        <div class="hint" style="margin-top: 4px;">
+          If overlay shows black screen, click this to force a full canvas/capture refresh. This recreates the WebGL context and restarts the capture stream.
+        </div>
+        <button id="forceRefresh" style="width:100%; margin-top:4px;">Force overlay refresh</button>
+      </div>
     </div>
   </div>
 
-  <!-- PRESETS -->
+  <!-- CLINICAL PRESETS -->
   <h2>Clinical Presets</h2>
   <div class="preset-list">
     <div class="preset" data-preset="off">Bypass</div>
@@ -358,151 +439,45 @@
     <button class="primary" id="saveCustomPreset">Save current</button>
   </div>
 
-  <h2>Pipeline</h2>
-
-  <!-- SMART BLUR -->
-  <div class="stage open" id="stage-blur">
-    <div class="stage-header">
-      <span class="stage-title">1. Smart Blur</span>
-      <div class="toggle on" data-toggle="blurOn"></div>
-    </div>
-    <div class="stage-body">
-      <div class="row">
-        <label>Radius</label>
-        <input type="range" min="0" max="8" step="1" value="3" data-p="blurRadius">
-        <span class="val" data-v="blurRadius">3</span>
-      </div>
-      <div class="row">
-        <label>Edge preserve</label>
-        <input type="range" min="0.01" max="0.5" step="0.01" value="0.12" data-p="blurSigma">
-        <span class="val" data-v="blurSigma">0.12</span>
-      </div>
+  <!-- MODIFIER STACK -->
+  <h2>Modifier Stack</h2>
+  <div class="add-stage-panel">
+    <div style="font-size: 10px; font-weight: 600; margin-bottom: 6px; color: var(--muted);">ADD STAGE</div>
+    <div class="palette">
+      <div class="palette-item" data-stage="blur">Blur</div>
+      <div class="palette-item" data-stage="sobel">Sobel</div>
+      <div class="palette-item" data-stage="colorramp">Ramp</div>
+      <div class="palette-item" data-stage="colorAdjust">Adjust</div>
+      <div class="palette-item" data-stage="hueShift">Hue</div>
+      <div class="palette-item" data-stage="lumThreshold">Threshold</div>
+      <div class="palette-item" data-stage="channelMixer">Mixer</div>
+      <div class="palette-item" data-stage="chromaKey">Chroma</div>
+      <div class="palette-item" data-stage="group">Group</div>
     </div>
   </div>
 
-  <!-- SOBEL OUTLINES -->
-  <div class="stage open" id="stage-edge">
-    <div class="stage-header">
-      <span class="stage-title">2. Sobel Outlines</span>
-      <div class="toggle on" data-toggle="edgeOn"></div>
-    </div>
-    <div class="stage-body">
-      <div class="row">
-        <label>Threshold</label>
-        <input type="range" min="0" max="1" step="0.01" value="0.15" data-p="edgeThreshold">
-        <span class="val" data-v="edgeThreshold">0.15</span>
-      </div>
-      <div class="row">
-        <label>Thickness</label>
-        <input type="range" min="1" max="4" step="1" value="1" data-p="edgeThickness">
-        <span class="val" data-v="edgeThickness">1</span>
-      </div>
-      <div class="row">
-        <label>Strength</label>
-        <input type="range" min="0" max="1" step="0.01" value="1.0" data-p="edgeStrength">
-        <span class="val" data-v="edgeStrength">1.0</span>
-      </div>
-      <div class="row">
-        <label>Color</label>
-        <input type="color" value="#ffff00" data-p="edgeColor">
-        <span class="val" data-v="edgeColor">#ffff00</span>
-      </div>
-      <div class="row">
-        <label>Source</label>
-        <select data-p="edgeSource">
-          <option value="0">Luminance</option>
-          <option value="1">Chrominance</option>
-          <option value="2" selected>Both (max)</option>
-        </select>
-      </div>
-      <div class="row">
-        <label>Mode</label>
-        <select data-p="edgeMode">
-          <option value="0">Overlay (add)</option>
-          <option value="1" selected>Replace where edge</option>
-          <option value="2">Outline only (black bg)</option>
-        </select>
-      </div>
-    </div>
-  </div>
+  <div id="stackContainer"></div>
 
-  <!-- COLOR RAMP -->
-  <div class="stage open" id="stage-ramp">
-    <div class="stage-header">
-      <span class="stage-title">3. Color Ramp</span>
-      <div class="toggle on" data-toggle="rampOn"></div>
-    </div>
-    <div class="stage-body">
-      <div class="row">
-        <label>Driver</label>
-        <select data-p="rampDriver">
-          <option value="0" selected>Luminance</option>
-          <option value="1">Hue</option>
-          <option value="2">Saturation</option>
-          <option value="3">Red channel</option>
-          <option value="4">Green channel</option>
-          <option value="5">Blue channel</option>
-        </select>
-      </div>
-      <div class="row">
-        <label>Mix</label>
-        <input type="range" min="0" max="1" step="0.01" value="1.0" data-p="rampMix">
-        <span class="val" data-v="rampMix">1.0</span>
-      </div>
-      <div class="row">
-        <label>Contrast</label>
-        <input type="range" min="0.5" max="3" step="0.05" value="1.0" data-p="rampContrast">
-        <span class="val" data-v="rampContrast">1.0</span>
-      </div>
-      <div class="ramp-preview" id="rampPreview"></div>
-      <div id="rampStops"></div>
-      <button id="addStop" style="width:100%; margin-top:4px;">+ Add stop</button>
-    </div>
-  </div>
-
-  <h2>Global</h2>
-  <div class="row">
-    <label>Brightness</label>
-    <input type="range" min="-0.5" max="0.5" step="0.01" value="0" data-p="brightness">
-    <span class="val" data-v="brightness">0</span>
-  </div>
-  <div class="row">
-    <label>Contrast</label>
-    <input type="range" min="0.5" max="2.5" step="0.01" value="1" data-p="contrast">
-    <span class="val" data-v="contrast">1</span>
-  </div>
-  <div class="row">
-    <label>Saturation</label>
-    <input type="range" min="0" max="2" step="0.01" value="1" data-p="saturation">
-    <span class="val" data-v="saturation">1</span>
-  </div>
-
+  <!-- CONFIG I/O -->
   <h2>Config</h2>
   <div class="actions">
-    <button id="exportCfg">Export settings</button>
-    <button id="importCfg">Import settings</button>
+    <button id="exportCfg">Export stack</button>
+    <button id="importCfg">Import stack</button>
   </div>
 </div>
 
+<script src="filter.js"></script>
 <script>
 const { ipcRenderer } = require('electron');
 const fs = require('fs');
 
 // ============================================================================
-// STATE (mirrors overlay's VisionFilter defaults)
+// STATE
 // ============================================================================
-const state = {
-  blurOn: true, blurRadius: 3, blurSigma: 0.12,
-  edgeOn: true, edgeThreshold: 0.15, edgeThickness: 1, edgeStrength: 1.0,
-  edgeColor: [1, 1, 0], edgeSource: 2, edgeMode: 1,
-  rampOn: true, rampDriver: 0, rampMix: 1.0, rampContrast: 1.0,
-  brightness: 0, contrast: 1, saturation: 1,
-};
-let rampStops = [
-  { pos: 0.0, color: [0.04, 0.06, 0.25] },
-  { pos: 0.35, color: [0.25, 0.35, 0.65] },
-  { pos: 0.65, color: [0.75, 0.70, 0.35] },
-  { pos: 1.0, color: [1.0, 0.95, 0.55] },
+let stack = [
+  createStage('blur', { radius: 3, sigma: 0.12 }),
+  createStage('sobel', { threshold: 0.15, thickness: 1, strength: 1.0 }),
+  createStage('colorramp', { driver: 0, mix: 1.0, contrast: 1.0 }),
 ];
 
 let selectedSourceId = null;
@@ -525,231 +500,537 @@ function rgbToHex(rgb) {
   return '#' + h(rgb[0]) + h(rgb[1]) + h(rgb[2]);
 }
 
-function pushSettings() {
-  ipcRenderer.invoke('set-settings', { ...state, rampStops });
+function pushStack() {
+  ipcRenderer.invoke('set-stack', stack);
 }
 
 // ============================================================================
-// UI WIRING
+// STACK RENDERING
 // ============================================================================
-document.querySelectorAll('[data-toggle]').forEach(el => {
-  el.addEventListener('click', () => {
-    const key = el.dataset.toggle;
-    state[key] = !state[key];
-    el.classList.toggle('on', state[key]);
-    pushSettings();
-  });
-});
-
-document.querySelectorAll('[data-p]').forEach(el => {
-  const key = el.dataset.p;
-  if (el.type === 'range' || el.type === 'number') {
-    el.value = state[key];
-    const valEl = document.querySelector(`[data-v="${key}"]`);
-    if (valEl) valEl.textContent = state[key];
-    el.addEventListener('input', () => {
-      state[key] = parseFloat(el.value);
-      if (valEl) valEl.textContent = el.value;
-      pushSettings();
-    });
-  } else if (el.tagName === 'SELECT') {
-    el.value = state[key];
-    el.addEventListener('change', () => {
-      state[key] = parseInt(el.value);
-      pushSettings();
-    });
-  } else if (el.type === 'color') {
-    el.value = rgbToHex(state[key]);
-    const valEl = document.querySelector(`[data-v="${key}"]`);
-    if (valEl) valEl.textContent = el.value;
-    el.addEventListener('input', () => {
-      state[key] = hexToRgb(el.value);
-      if (valEl) valEl.textContent = el.value;
-      pushSettings();
-    });
-  }
-});
-
-// RAMP STOPS
-function renderRampStops() {
-  const container = document.getElementById('rampStops');
+function renderStack() {
+  const container = document.getElementById('stackContainer');
   container.innerHTML = '';
-  rampStops.forEach((stop, i) => {
-    const row = document.createElement('div');
-    row.className = 'ramp-stop';
-    row.innerHTML = `
-      <input type="number" min="0" max="1" step="0.01" value="${stop.pos.toFixed(2)}">
-      <input type="range" min="0" max="1" step="0.01" value="${stop.pos}">
-      <input type="color" value="${rgbToHex(stop.color)}">
-      <button class="del">×</button>
-    `;
-    const [num, range, color, del] = row.children;
-    num.addEventListener('input', () => {
-      rampStops[i].pos = Math.max(0, Math.min(1, parseFloat(num.value) || 0));
-      range.value = rampStops[i].pos;
-      updateRampPreview(); pushSettings();
-    });
-    range.addEventListener('input', () => {
-      rampStops[i].pos = parseFloat(range.value);
-      num.value = rampStops[i].pos.toFixed(2);
-      updateRampPreview(); pushSettings();
-    });
-    color.addEventListener('input', () => {
-      rampStops[i].color = hexToRgb(color.value);
-      updateRampPreview(); pushSettings();
-    });
-    del.addEventListener('click', () => {
-      if (rampStops.length > 2) {
-        rampStops.splice(i, 1);
-        renderRampStops(); updateRampPreview(); pushSettings();
-      }
-    });
-    container.appendChild(row);
+
+  stack.forEach((stage, index) => {
+    const el = createStageElement(stage, index);
+    container.appendChild(el);
   });
 }
-function updateRampPreview() {
-  const sorted = [...rampStops].sort((a, b) => a.pos - b.pos);
-  const gradient = sorted.map(s => `${rgbToHex(s.color)} ${(s.pos * 100).toFixed(0)}%`).join(', ');
-  document.getElementById('rampPreview').style.background = `linear-gradient(to right, ${gradient})`;
+
+function createStageElement(stage, index) {
+  const div = document.createElement('div');
+  div.className = 'stage open';
+  div.dataset.stageId = stage.id;
+  div.dataset.index = index;
+
+  const typeLabel = {
+    blur: 'Smart Blur',
+    sobel: 'Sobel Edges',
+    colorramp: 'Color Ramp',
+    colorAdjust: 'Color Adjust',
+    hueShift: 'Hue Shift',
+    lumThreshold: 'Lum Threshold',
+    channelMixer: 'Channel Mixer',
+    chromaKey: 'Chroma Key',
+    group: 'Group',
+  }[stage.type] || stage.type;
+
+  div.innerHTML = `
+    <div class="stage-header">
+      <span class="stage-drag-handle">⋮⋮</span>
+      <span class="stage-title">${index + 1}. ${typeLabel}</span>
+      <div class="stage-controls">
+        <div class="toggle ${stage.enabled ? 'on' : ''}" data-action="toggle"></div>
+        <button class="icon-btn" data-action="duplicate" title="Duplicate">⎘</button>
+        <button class="icon-btn danger" data-action="delete" title="Delete">×</button>
+      </div>
+    </div>
+    <div class="stage-body"></div>
+  `;
+
+  const body = div.querySelector('.stage-body');
+  body.appendChild(createStageControls(stage));
+
+  // Event handlers
+  div.querySelector('[data-action="toggle"]').addEventListener('click', () => {
+    stage.enabled = !stage.enabled;
+    renderStack();
+    pushStack();
+  });
+
+  div.querySelector('[data-action="duplicate"]').addEventListener('click', () => {
+    const copy = JSON.parse(JSON.stringify(stage));
+    copy.id = `stage_${Date.now()}`;
+    stack.splice(index + 1, 0, copy);
+    renderStack();
+    pushStack();
+  });
+
+  div.querySelector('[data-action="delete"]').addEventListener('click', () => {
+    if (confirm(`Delete ${typeLabel}?`)) {
+      stack.splice(index, 1);
+      renderStack();
+      pushStack();
+    }
+  });
+
+  // Drag and drop - only from drag handle
+  const dragHandle = div.querySelector('.stage-drag-handle');
+
+  dragHandle.addEventListener('mousedown', () => {
+    div.draggable = true;
+  });
+
+  div.addEventListener('dragstart', e => {
+    if (!div.draggable) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index);
+    div.classList.add('dragging');
+  });
+
+  div.addEventListener('dragend', () => {
+    div.draggable = false;
+    div.classList.remove('dragging');
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('drag-over'));
+  });
+
+  div.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    div.classList.add('drag-over');
+  });
+
+  div.addEventListener('dragleave', () => {
+    div.classList.remove('drag-over');
+  });
+
+  div.addEventListener('drop', e => {
+    e.preventDefault();
+    div.classList.remove('drag-over');
+    const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+    const toIndex = index;
+    if (fromIndex !== toIndex) {
+      const [item] = stack.splice(fromIndex, 1);
+      stack.splice(toIndex, 0, item);
+      renderStack();
+      pushStack();
+    }
+  });
+
+  return div;
 }
-document.getElementById('addStop').addEventListener('click', () => {
-  if (rampStops.length >= 8) return;
-  rampStops.push({ pos: 0.5, color: [0.5, 0.5, 0.5] });
-  renderRampStops(); updateRampPreview(); pushSettings();
-});
-renderRampStops();
-updateRampPreview();
+
+function createStageControls(stage) {
+  const container = document.createElement('div');
+
+  switch (stage.type) {
+    case 'blur':
+      container.innerHTML = `
+        <div class="row">
+          <label>Radius</label>
+          <input type="range" min="0" max="8" step="0.1" value="${stage.params.radius}" data-param="radius">
+          <span class="val">${stage.params.radius.toFixed(1)}</span>
+        </div>
+        <div class="row">
+          <label>Edge preserve</label>
+          <input type="range" min="0.01" max="0.5" step="0.01" value="${stage.params.sigma}" data-param="sigma">
+          <span class="val">${stage.params.sigma}</span>
+        </div>
+      `;
+      break;
+
+    case 'sobel':
+      container.innerHTML = `
+        <div class="row">
+          <label>Threshold</label>
+          <input type="range" min="0" max="1" step="0.01" value="${stage.params.threshold}" data-param="threshold">
+          <span class="val">${stage.params.threshold}</span>
+        </div>
+        <div class="row">
+          <label>Thickness</label>
+          <input type="range" min="0.5" max="4" step="0.1" value="${stage.params.thickness}" data-param="thickness">
+          <span class="val">${stage.params.thickness.toFixed(1)}</span>
+        </div>
+        <div class="row">
+          <label>Strength</label>
+          <input type="range" min="0" max="1" step="0.01" value="${stage.params.strength}" data-param="strength">
+          <span class="val">${stage.params.strength}</span>
+        </div>
+        <div class="row">
+          <label>Color</label>
+          <input type="color" value="${rgbToHex(stage.params.color)}" data-param="color">
+          <span class="val">${rgbToHex(stage.params.color)}</span>
+        </div>
+        <div class="row">
+          <label>Source</label>
+          <select data-param="source">
+            <option value="0" ${stage.params.source === 0 ? 'selected' : ''}>Luminance</option>
+            <option value="1" ${stage.params.source === 1 ? 'selected' : ''}>Chrominance</option>
+            <option value="2" ${stage.params.source === 2 ? 'selected' : ''}>Both (max)</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Mode</label>
+          <select data-param="mode">
+            <option value="0" ${stage.params.mode === 0 ? 'selected' : ''}>Overlay (add)</option>
+            <option value="1" ${stage.params.mode === 1 ? 'selected' : ''}>Replace where edge</option>
+            <option value="2" ${stage.params.mode === 2 ? 'selected' : ''}>Outline only (black bg)</option>
+          </select>
+        </div>
+      `;
+      break;
+
+    case 'colorramp':
+      const rampStopsHTML = stage.params.stops.map((stop, i) => `
+        <div class="ramp-stop">
+          <input type="number" min="0" max="1" step="0.01" value="${stop.pos.toFixed(2)}" data-stop-idx="${i}" data-stop-param="pos">
+          <input type="range" min="0" max="1" step="0.01" value="${stop.pos}" data-stop-idx="${i}" data-stop-param="pos-slider">
+          <input type="color" value="${rgbToHex(stop.color)}" data-stop-idx="${i}" data-stop-param="color">
+          <button class="del" data-stop-idx="${i}" data-stop-param="delete">×</button>
+        </div>
+      `).join('');
+
+      const gradient = [...stage.params.stops].sort((a, b) => a.pos - b.pos)
+        .map(s => `${rgbToHex(s.color)} ${(s.pos * 100).toFixed(0)}%`).join(', ');
+
+      container.innerHTML = `
+        <div class="row">
+          <label>Driver</label>
+          <select data-param="driver">
+            <option value="0" ${stage.params.driver === 0 ? 'selected' : ''}>Luminance</option>
+            <option value="1" ${stage.params.driver === 1 ? 'selected' : ''}>Hue</option>
+            <option value="2" ${stage.params.driver === 2 ? 'selected' : ''}>Saturation</option>
+            <option value="3" ${stage.params.driver === 3 ? 'selected' : ''}>Red channel</option>
+            <option value="4" ${stage.params.driver === 4 ? 'selected' : ''}>Green channel</option>
+            <option value="5" ${stage.params.driver === 5 ? 'selected' : ''}>Blue channel</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Mix</label>
+          <input type="range" min="0" max="1" step="0.01" value="${stage.params.mix}" data-param="mix">
+          <span class="val">${stage.params.mix}</span>
+        </div>
+        <div class="row">
+          <label>Contrast</label>
+          <input type="range" min="0.5" max="3" step="0.05" value="${stage.params.contrast}" data-param="contrast">
+          <span class="val">${stage.params.contrast}</span>
+        </div>
+        <div class="ramp-preview" style="background: linear-gradient(to right, ${gradient});"></div>
+        ${rampStopsHTML}
+        <button style="width:100%; margin-top:4px;" data-param="add-stop">+ Add stop</button>
+      `;
+      break;
+
+    case 'colorAdjust':
+      container.innerHTML = `
+        <div class="row">
+          <label>Brightness</label>
+          <input type="range" min="-0.5" max="0.5" step="0.01" value="${stage.params.brightness}" data-param="brightness">
+          <span class="val">${stage.params.brightness}</span>
+        </div>
+        <div class="row">
+          <label>Contrast</label>
+          <input type="range" min="0.5" max="2.5" step="0.01" value="${stage.params.contrast}" data-param="contrast">
+          <span class="val">${stage.params.contrast}</span>
+        </div>
+        <div class="row">
+          <label>Saturation</label>
+          <input type="range" min="0" max="2" step="0.01" value="${stage.params.saturation}" data-param="saturation">
+          <span class="val">${stage.params.saturation}</span>
+        </div>
+      `;
+      break;
+
+    case 'hueShift':
+      container.innerHTML = `
+        <div class="row">
+          <label>Shift (rad)</label>
+          <input type="range" min="0" max="6.28" step="0.01" value="${stage.params.shift}" data-param="shift">
+          <span class="val">${stage.params.shift.toFixed(2)}</span>
+        </div>
+      `;
+      break;
+
+    case 'lumThreshold':
+      container.innerHTML = `
+        <div class="row">
+          <label>Threshold</label>
+          <input type="range" min="0" max="1" step="0.01" value="${stage.params.threshold}" data-param="threshold">
+          <span class="val">${stage.params.threshold}</span>
+        </div>
+        <div class="row">
+          <label>Range</label>
+          <input type="range" min="0" max="0.5" step="0.01" value="${stage.params.range}" data-param="range">
+          <span class="val">${stage.params.range}</span>
+        </div>
+      `;
+      break;
+
+    case 'channelMixer':
+      container.innerHTML = `
+        <div class="hint">Red output = R×${stage.params.redMix[0]} + G×${stage.params.redMix[1]} + B×${stage.params.redMix[2]}</div>
+        <div class="hint">Advanced: Edit JSON to customize channel mixing</div>
+      `;
+      break;
+
+    case 'chromaKey':
+      container.innerHTML = `
+        <div class="row">
+          <label>Key color</label>
+          <input type="color" value="${rgbToHex(stage.params.keyColor)}" data-param="keyColor">
+          <span class="val">${rgbToHex(stage.params.keyColor)}</span>
+        </div>
+        <div class="row">
+          <label>Threshold</label>
+          <input type="range" min="0" max="1" step="0.01" value="${stage.params.threshold}" data-param="threshold">
+          <span class="val">${stage.params.threshold}</span>
+        </div>
+        <div class="row">
+          <label>Smoothness</label>
+          <input type="range" min="0" max="0.5" step="0.01" value="${stage.params.smoothness}" data-param="smoothness">
+          <span class="val">${stage.params.smoothness}</span>
+        </div>
+      `;
+      break;
+
+    case 'group':
+      container.innerHTML = `
+        <div class="row">
+          <label>Blend mode</label>
+          <select data-param="blendMode">
+            <option value="0" ${stage.params.blendMode === 0 ? 'selected' : ''}>Normal</option>
+            <option value="1" ${stage.params.blendMode === 1 ? 'selected' : ''}>Multiply</option>
+            <option value="2" ${stage.params.blendMode === 2 ? 'selected' : ''}>Screen</option>
+            <option value="3" ${stage.params.blendMode === 3 ? 'selected' : ''}>Overlay</option>
+            <option value="4" ${stage.params.blendMode === 4 ? 'selected' : ''}>Add</option>
+            <option value="5" ${stage.params.blendMode === 5 ? 'selected' : ''}>Subtract</option>
+            <option value="6" ${stage.params.blendMode === 6 ? 'selected' : ''}>Difference</option>
+            <option value="7" ${stage.params.blendMode === 7 ? 'selected' : ''}>Lighten</option>
+            <option value="8" ${stage.params.blendMode === 8 ? 'selected' : ''}>Darken</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>Mix</label>
+          <input type="range" min="0" max="1" step="0.01" value="${stage.params.mix}" data-param="mix">
+          <span class="val">${stage.params.mix}</span>
+        </div>
+        <div class="hint">Groups not fully implemented in UI yet. Children: ${stage.children ? stage.children.length : 0}</div>
+      `;
+      break;
+  }
+
+  // Wire up param changes
+  container.querySelectorAll('[data-param]').forEach(input => {
+    const param = input.dataset.param;
+
+    // Prevent drag from interfering with controls
+    input.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+    });
+    input.addEventListener('dragstart', (e) => {
+      e.stopPropagation();
+    });
+
+    if (param === 'add-stop') {
+      input.addEventListener('click', () => {
+        if (stage.params.stops.length >= 8) return;
+        stage.params.stops.push({ pos: 0.5, color: [0.5, 0.5, 0.5] });
+        renderStack();
+        pushStack();
+      });
+      return;
+    }
+
+    input.addEventListener('input', () => {
+      const val = input.value;
+      const valSpan = input.nextElementSibling;
+
+      if (input.type === 'range' || input.type === 'number') {
+        stage.params[param] = parseFloat(val);
+        if (valSpan && valSpan.classList.contains('val')) valSpan.textContent = val;
+      } else if (input.type === 'color') {
+        stage.params[param] = hexToRgb(val);
+        if (valSpan && valSpan.classList.contains('val')) valSpan.textContent = val;
+      } else if (input.tagName === 'SELECT') {
+        stage.params[param] = parseInt(val);
+      }
+
+      pushStack();
+    });
+  });
+
+  // Wire up ramp stop controls
+  container.querySelectorAll('[data-stop-idx]').forEach(input => {
+    const idx = parseInt(input.dataset.stopIdx);
+    const param = input.dataset.stopParam;
+
+    // Prevent drag from interfering with ramp controls
+    input.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+    });
+    input.addEventListener('dragstart', (e) => {
+      e.stopPropagation();
+    });
+
+    if (param === 'delete') {
+      input.addEventListener('click', () => {
+        if (stage.params.stops.length > 2) {
+          stage.params.stops.splice(idx, 1);
+          renderStack();
+          pushStack();
+        }
+      });
+    } else if (param === 'pos' || param === 'pos-slider') {
+      input.addEventListener('input', () => {
+        stage.params.stops[idx].pos = Math.max(0, Math.min(1, parseFloat(input.value) || 0));
+        // Don't renderStack() during drag - just push changes
+        pushStack();
+
+        // Update the other control (slider <-> number input)
+        if (param === 'pos-slider') {
+          const numberInput = input.parentElement.querySelector('[data-stop-param="pos"]');
+          if (numberInput) numberInput.value = stage.params.stops[idx].pos.toFixed(2);
+        } else {
+          const sliderInput = input.parentElement.querySelector('[data-stop-param="pos-slider"]');
+          if (sliderInput) sliderInput.value = stage.params.stops[idx].pos;
+        }
+      });
+
+      // Re-render when done dragging
+      input.addEventListener('change', () => {
+        renderStack();
+      });
+    } else if (param === 'color') {
+      input.addEventListener('input', () => {
+        stage.params.stops[idx].color = hexToRgb(input.value);
+        pushStack();
+      });
+
+      // Re-render when color picker closes
+      input.addEventListener('change', () => {
+        renderStack();
+      });
+    }
+  });
+
+  return container;
+}
 
 // ============================================================================
-// PRESETS
+// ADD STAGE PALETTE
 // ============================================================================
-const PRESETS = {
+document.querySelectorAll('.palette-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const type = item.dataset.stage;
+    const newStage = createStage(type);
+    stack.push(newStage);
+    renderStack();
+    pushStack();
+  });
+});
+
+// ============================================================================
+// LEGACY PRESETS (convert to stack on apply)
+// ============================================================================
+const LEGACY_PRESETS = {
   off: { blurOn: false, edgeOn: false, rampOn: false, brightness: 0, contrast: 1, saturation: 1 },
 
-  // -- CLINICAL (recommended) --
   'by-high': {
-    // Pure 2-color blue->yellow ramp with cranked contrast. The primary recommendation for CRD.
     blurOn: true, blurRadius: 3, blurSigma: 0.10,
     edgeOn: true, edgeThreshold: 0.10, edgeThickness: 2, edgeStrength: 1.0,
     edgeColor: [1, 1, 0.4], edgeSource: 2, edgeMode: 0,
     rampOn: true, rampDriver: 0, rampMix: 1.0, rampContrast: 1.8,
+    rampStops: [
+      { pos: 0.0, color: [0.02, 0.04, 0.25] },
+      { pos: 0.5, color: [0.35, 0.35, 0.45] },
+      { pos: 1.0, color: [1.0, 0.95, 0.40] },
+    ],
     contrast: 1.2, saturation: 0.6,
   },
   'by-subtle': {
-    // Same axis but gentler. For situations where the high-contrast version feels overwhelming.
     blurOn: true, blurRadius: 2, blurSigma: 0.12,
     edgeOn: true, edgeThreshold: 0.14, edgeThickness: 1, edgeStrength: 0.7,
     edgeColor: [1, 1, 0.4], edgeSource: 2, edgeMode: 0,
     rampOn: true, rampDriver: 0, rampMix: 0.6, rampContrast: 1.2,
+    rampStops: [
+      { pos: 0.0, color: [0.08, 0.12, 0.30] },
+      { pos: 0.4, color: [0.30, 0.35, 0.55] },
+      { pos: 0.7, color: [0.75, 0.70, 0.45] },
+      { pos: 1.0, color: [1.0, 0.95, 0.60] },
+    ],
     contrast: 1.1, saturation: 0.8,
   },
   outline: {
-    // Edges-only emphasis. Keep the original colors, just add thick yellow outlines.
     blurOn: true, blurRadius: 2, blurSigma: 0.12,
     edgeOn: true, edgeThreshold: 0.10, edgeThickness: 2, edgeStrength: 1.0,
     edgeColor: [1, 1, 0], edgeSource: 2, edgeMode: 0,
     rampOn: false, contrast: 1.1,
   },
   indoor: {
-    // Lifts shadows so doors/doorways don't vanish into dark walls. B/Y axis with brightness lift.
     blurOn: true, blurRadius: 2, blurSigma: 0.08,
     edgeOn: true, edgeThreshold: 0.10, edgeThickness: 2, edgeStrength: 1.0,
     edgeColor: [1, 1, 0.4], edgeSource: 2, edgeMode: 1,
     rampOn: true, rampDriver: 0, rampMix: 0.8, rampContrast: 1.4,
+    rampStops: [
+      { pos: 0.0, color: [0.15, 0.12, 0.35] },
+      { pos: 0.35, color: [0.35, 0.35, 0.55] },
+      { pos: 0.7, color: [0.85, 0.75, 0.40] },
+      { pos: 1.0, color: [1.0, 0.95, 0.60] },
+    ],
     brightness: 0.12, contrast: 1.1,
   },
   maze: {
-    // The nuclear option. Pure line-art view. For invisible-door events.
     blurOn: false,
     edgeOn: true, edgeThreshold: 0.04, edgeThickness: 2, edgeStrength: 1.0,
     edgeColor: [1, 1, 0], edgeSource: 2, edgeMode: 2,
     rampOn: false, contrast: 1.5,
   },
-
-  // -- DEBUG (experimental) --
   'crd-green': {
     blurOn: true, blurRadius: 2, blurSigma: 0.15,
     edgeOn: true, edgeThreshold: 0.12, edgeThickness: 1, edgeStrength: 0.8,
     edgeColor: [1, 1, 0], edgeSource: 2, edgeMode: 0,
     rampOn: true, rampDriver: 1, rampMix: 0.7, rampContrast: 1.2,
+    rampStops: [
+      { pos: 0.0, color: [1, 0, 0] },
+      { pos: 0.15, color: [1, 0.6, 0] },
+      { pos: 0.25, color: [1, 1, 0] },
+      { pos: 0.35, color: [0, 0.5, 1] },
+      { pos: 0.5, color: [0, 0.8, 1] },
+      { pos: 0.65, color: [0.3, 0.3, 1] },
+      { pos: 0.85, color: [1, 0, 1] },
+      { pos: 1.0, color: [1, 0, 0] },
+    ],
   },
   'crd-high': {
     blurOn: true, blurRadius: 3, blurSigma: 0.10,
     edgeOn: true, edgeThreshold: 0.08, edgeThickness: 2, edgeStrength: 1.0,
     edgeColor: [1, 1, 0], edgeSource: 2, edgeMode: 0,
     rampOn: true, rampDriver: 0, rampMix: 1.0, rampContrast: 1.6,
+    rampStops: [
+      { pos: 0.0, color: [0, 0, 0.2] },
+      { pos: 0.3, color: [0.1, 0.3, 0.8] },
+      { pos: 0.55, color: [1, 0.8, 0.1] },
+      { pos: 0.8, color: [1, 1, 0.7] },
+      { pos: 1.0, color: [1, 1, 1] },
+    ],
     contrast: 1.3, saturation: 1.2,
   },
 };
-const PRESET_RAMPS = {
-  // CLINICAL. All B/Y axis.
-  'by-high': [
-    { pos: 0.0, color: [0.02, 0.04, 0.25] },   // deep blue
-    { pos: 0.5, color: [0.35, 0.35, 0.45] },   // neutral mid
-    { pos: 1.0, color: [1.0, 0.95, 0.40] },    // saturated yellow
-  ],
-  'by-subtle': [
-    { pos: 0.0, color: [0.08, 0.12, 0.30] },
-    { pos: 0.4, color: [0.30, 0.35, 0.55] },
-    { pos: 0.7, color: [0.75, 0.70, 0.45] },
-    { pos: 1.0, color: [1.0, 0.95, 0.60] },
-  ],
-  indoor: [
-    { pos: 0.0, color: [0.15, 0.12, 0.35] },   // lifted shadows, still blue
-    { pos: 0.35, color: [0.35, 0.35, 0.55] },
-    { pos: 0.7, color: [0.85, 0.75, 0.40] },
-    { pos: 1.0, color: [1.0, 0.95, 0.60] },
-  ],
 
-  // DEBUG. Kept for experimentation.
-  'crd-green': [
-    { pos: 0.0, color: [1, 0, 0] },
-    { pos: 0.15, color: [1, 0.6, 0] },
-    { pos: 0.25, color: [1, 1, 0] },
-    { pos: 0.35, color: [0, 0.5, 1] },
-    { pos: 0.5, color: [0, 0.8, 1] },
-    { pos: 0.65, color: [0.3, 0.3, 1] },
-    { pos: 0.85, color: [1, 0, 1] },
-    { pos: 1.0, color: [1, 0, 0] },
-  ],
-  'crd-high': [
-    { pos: 0.0, color: [0, 0, 0.2] },
-    { pos: 0.3, color: [0.1, 0.3, 0.8] },
-    { pos: 0.55, color: [1, 0.8, 0.1] },
-    { pos: 0.8, color: [1, 1, 0.7] },
-    { pos: 1.0, color: [1, 1, 1] },
-  ],
-};
-
-function applyPreset(name) {
-  const p = PRESETS[name];
-  if (!p) return;
-  Object.assign(state, p);
-  if (PRESET_RAMPS[name]) rampStops = JSON.parse(JSON.stringify(PRESET_RAMPS[name]));
-  syncUI();
-  pushSettings();
+function legacySettingsToStack(settings) {
+  const tempFilter = new VisionFilter(document.createElement('canvas'));
+  return tempFilter.legacySettingsToStack(settings);
 }
 
-function syncUI() {
-  document.querySelectorAll('[data-toggle]').forEach(el => {
-    el.classList.toggle('on', state[el.dataset.toggle]);
-  });
-  document.querySelectorAll('[data-p]').forEach(el => {
-    const key = el.dataset.p;
-    if (el.type === 'range' || el.type === 'number') {
-      el.value = state[key];
-      const v = document.querySelector(`[data-v="${key}"]`);
-      if (v) v.textContent = state[key];
-    } else if (el.tagName === 'SELECT') {
-      el.value = state[key];
-    } else if (el.type === 'color') {
-      el.value = rgbToHex(state[key]);
-      const v = document.querySelector(`[data-v="${key}"]`);
-      if (v) v.textContent = el.value;
-    }
-  });
-  renderRampStops();
-  updateRampPreview();
+function applyPreset(name) {
+  const preset = LEGACY_PRESETS[name];
+  if (!preset) return;
+  stack = legacySettingsToStack(preset);
+  renderStack();
+  pushStack();
 }
 
 document.querySelectorAll('.preset').forEach(el => {
@@ -797,11 +1078,23 @@ function renderCustomPresets() {
       renderCustomPresets();
     });
 
-    applyBtn.addEventListener('click', () => applyCustomPreset(name));
+    applyBtn.addEventListener('click', () => {
+      const cfg = customPresets[name];
+      if (!cfg) return;
+      // Check if it's a stack or legacy format
+      if (cfg.stack) {
+        stack = JSON.parse(JSON.stringify(cfg.stack));
+      } else if (cfg.state) {
+        // Legacy format
+        stack = legacySettingsToStack(cfg.state);
+      }
+      renderStack();
+      pushStack();
+    });
 
     overwriteBtn.addEventListener('click', async () => {
-      if (!confirm(`Overwrite "${name}" with current settings?`)) return;
-      await ipcRenderer.invoke('presets-save', name, { state: { ...state }, rampStops });
+      if (!confirm(`Overwrite "${name}" with current stack?`)) return;
+      await ipcRenderer.invoke('presets-save', name, { stack: JSON.parse(JSON.stringify(stack)) });
       await loadCustomPresets();
     });
 
@@ -825,15 +1118,6 @@ function renderCustomPresets() {
   });
 }
 
-function applyCustomPreset(name) {
-  const cfg = customPresets[name];
-  if (!cfg) return;
-  Object.assign(state, cfg.state);
-  if (cfg.rampStops) rampStops = JSON.parse(JSON.stringify(cfg.rampStops));
-  syncUI();
-  pushSettings();
-}
-
 document.getElementById('saveCustomPreset').addEventListener('click', async () => {
   const input = document.getElementById('presetNameInput');
   const name = input.value.trim();
@@ -843,7 +1127,7 @@ document.getElementById('saveCustomPreset').addEventListener('click', async () =
     return;
   }
   if (customPresets[name] && !confirm(`"${name}" already exists. Overwrite?`)) return;
-  await ipcRenderer.invoke('presets-save', name, { state: { ...state }, rampStops });
+  await ipcRenderer.invoke('presets-save', name, { stack: JSON.parse(JSON.stringify(stack)) });
   input.value = '';
   await loadCustomPresets();
 });
@@ -852,18 +1136,60 @@ document.getElementById('presetNameInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('saveCustomPreset').click();
 });
 
-// Load on startup, and auto-apply default preset if one is set.
 loadCustomPresets().then(() => {
   if (defaultPresetName && customPresets[defaultPresetName]) {
-    applyCustomPreset(defaultPresetName);
+    const cfg = customPresets[defaultPresetName];
+    if (cfg.stack) {
+      stack = JSON.parse(JSON.stringify(cfg.stack));
+    } else if (cfg.state) {
+      stack = legacySettingsToStack(cfg.state);
+    }
+    renderStack();
+    pushStack();
   }
 });
 
 // ============================================================================
-// SOURCE SELECTION + UNIFIED TARGET
+// CONFIG I/O
 // ============================================================================
-// desktopCapturer source ids on Windows look like "window:HWND:0" or "screen:N:0".
-// Extract the HWND so we can hand it to node-window-manager for tracking.
+document.getElementById('exportCfg').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify({ stack }, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rs-vision-stack.json';
+  a.click();
+});
+
+document.getElementById('importCfg').addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json';
+  input.onchange = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+      try {
+        const cfg = JSON.parse(ev.target.result);
+        if (cfg.stack) {
+          stack = cfg.stack;
+        } else {
+          // Legacy format
+          stack = legacySettingsToStack(cfg);
+        }
+        renderStack();
+        pushStack();
+      } catch (err) { alert('Invalid config file.'); }
+    };
+    r.readAsText(f);
+  };
+  input.click();
+});
+
+// ============================================================================
+// SOURCE SELECTION + OVERLAY
+// ============================================================================
 function parseHwndFromSourceId(sourceId) {
   if (!sourceId) return null;
   const m = sourceId.match(/^window:(\d+):/);
@@ -875,7 +1201,6 @@ async function refreshSources() {
   const select = document.getElementById('sourceSelect');
   select.innerHTML = '<option value="">Select a window (or screen)...</option>';
 
-  // Sort: windows first with RuneLite/RuneScape at the top, then other windows, then screens.
   const rsMatch = /runelite|runescape|old school/i;
   const scored = sources.map(s => ({
     ...s,
@@ -897,11 +1222,9 @@ async function refreshSources() {
     select.appendChild(opt);
   });
 
-  // Auto-select if there's exactly one RuneLite window. Saves a click in the common case.
   const rsWindows = scored.filter(s => s.isRS && !s.isScreen);
   if (rsWindows.length === 1) {
     select.value = rsWindows[0].id;
-    // Trigger change event so thumbnail updates and live-swap fires if overlay is running.
     select.dispatchEvent(new Event('change'));
   }
 }
@@ -919,7 +1242,6 @@ document.getElementById('sourceSelect').addEventListener('change', e => {
     thumb.classList.remove('show');
   }
 
-  // If overlay is already running, live-swap the source and retarget tracking.
   if (selectedSourceId && overlayOpen) {
     ipcRenderer.invoke('set-source', selectedSourceId);
     document.getElementById('statusBar').classList.add('active');
@@ -928,7 +1250,6 @@ document.getElementById('sourceSelect').addEventListener('change', e => {
   }
 });
 
-// Advanced panel toggle
 document.getElementById('advancedToggle').addEventListener('click', () => {
   const stage = document.getElementById('stage-advanced');
   stage.classList.toggle('open');
@@ -938,11 +1259,7 @@ document.getElementById('advancedToggle').addEventListener('click', () => {
     : 'Advanced overlay settings ▸';
 });
 
-// ============================================================================
-// TRACKING (auto-derived from selected source)
-// ============================================================================
 async function retargetTracking() {
-  // Called after source changes or overlay starts. Auto-follow if user hasn't disabled it.
   const autoFollow = document.getElementById('autoFollowToggle').checked;
   if (!autoFollow) {
     await ipcRenderer.invoke('stop-tracking');
@@ -952,13 +1269,11 @@ async function retargetTracking() {
 
   const hwnd = parseHwndFromSourceId(selectedSourceId);
   if (!hwnd) {
-    // Selected source is a screen, not a window. Nothing to track.
     await ipcRenderer.invoke('stop-tracking');
     tracking = false;
     return;
   }
 
-  // Ask main to snap overlay bounds to this window immediately, then start polling.
   const ok = await ipcRenderer.invoke('start-tracking', hwnd);
   tracking = !!ok;
 }
@@ -967,9 +1282,6 @@ document.getElementById('autoFollowToggle').addEventListener('change', e => {
   if (overlayOpen) retargetTracking();
 });
 
-// ============================================================================
-// MANUAL TRACKING OFFSETS (debug)
-// ============================================================================
 async function pushOffset() {
   const offset = {
     x: parseFloat(document.getElementById('ox').value) || 0,
@@ -990,7 +1302,14 @@ document.getElementById('resetOffset').addEventListener('click', async () => {
   await pushOffset();
 });
 
-// Load current offsets from main on startup.
+document.getElementById('forceRefresh').addEventListener('click', async () => {
+  if (!overlayOpen) {
+    alert('Overlay is not open.');
+    return;
+  }
+  await ipcRenderer.invoke('force-overlay-refresh');
+});
+
 ipcRenderer.invoke('get-manual-offset').then(offset => {
   if (!offset) return;
   document.getElementById('ox').value = offset.x || 0;
@@ -999,16 +1318,12 @@ ipcRenderer.invoke('get-manual-offset').then(offset => {
   document.getElementById('oh').value = offset.h || 0;
 });
 
-// ============================================================================
-// OVERLAY CONTROL
-// ============================================================================
 document.getElementById('startOverlay').addEventListener('click', async () => {
   if (!selectedSourceId) {
     alert('Pick a target window first.');
     return;
   }
 
-  // Start overlay. Use manual bounds as initial position, tracking will snap it.
   const bounds = {
     x: parseInt(document.getElementById('bx').value) || 100,
     y: parseInt(document.getElementById('by').value) || 100,
@@ -1020,10 +1335,11 @@ document.getElementById('startOverlay').addEventListener('click', async () => {
   document.getElementById('startOverlay').disabled = true;
   document.getElementById('stopOverlay').disabled = false;
 
-  // Short delay for overlay window to finish initializing, then push source + settings + start tracking.
+  // Wait for overlay window to be visible before starting capture
   setTimeout(async () => {
     await ipcRenderer.invoke('set-source', selectedSourceId);
-    pushSettings();
+    await new Promise(resolve => setTimeout(resolve, 200));
+    pushStack();
     await retargetTracking();
   }, 500);
 
@@ -1049,58 +1365,18 @@ document.getElementById('applyBounds').addEventListener('click', async () => {
     width: parseInt(document.getElementById('bw').value) || 1280,
     height: parseInt(document.getElementById('bh').value) || 720,
   };
-  // Manual bounds implies user wants to pin overlay; turn off auto-follow.
   document.getElementById('autoFollowToggle').checked = false;
   await ipcRenderer.invoke('stop-tracking');
   tracking = false;
   ipcRenderer.invoke('set-overlay-bounds', bounds);
 });
 
-// ============================================================================
-// CONFIG I/O
-// ============================================================================
-document.getElementById('exportCfg').addEventListener('click', () => {
-  const cfg = { state, rampStops };
-  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'rs-vision-preset.json';
-  a.click();
-});
-document.getElementById('importCfg').addEventListener('click', () => {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'application/json';
-  input.onchange = e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const r = new FileReader();
-    r.onload = ev => {
-      try {
-        const cfg = JSON.parse(ev.target.result);
-        Object.assign(state, cfg.state);
-        if (cfg.rampStops) rampStops = cfg.rampStops;
-        syncUI();
-        pushSettings();
-      } catch (err) { alert('Invalid preset file.'); }
-    };
-    r.readAsText(f);
-  };
-  input.click();
-});
-
-// ============================================================================
-// FPS DISPLAY
-// ============================================================================
 ipcRenderer.on && ipcRenderer.on('overlay-fps-report', (event, fps) => {
   document.getElementById('fpsText').textContent = `${fps.toFixed(0)} fps`;
 });
-// Need a broadcast channel from main. Register handler on main that re-emits.
-// (Simpler: we listen for main-forwarded messages. See main.js overlay-fps handler if added.)
 
-// Initial
 refreshSources();
+renderStack();
 </script>
 </body>
 </html>

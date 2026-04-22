@@ -84,39 +84,73 @@ async function setSource(sourceId) {
 
   showStatus('Requesting capture for source ' + sourceId.substring(0, 20) + '...', { persist: true });
 
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        mandatory: {
-          chromeMediaSource: 'desktop',
-          chromeMediaSourceId: sourceId,
-          minWidth: 640,
-          maxWidth: 3840,
-          minHeight: 480,
-          maxHeight: 2160,
-          maxFrameRate: 60,
-        },
-      },
-    });
+  // Retry logic for race conditions with capture initialization
+  let retryCount = 0;
+  const maxRetries = 3;
 
-    if (!video) {
-      video = document.createElement('video');
-      video.autoplay = true;
-      video.muted = true;
-      video.playsInline = true;
+  while (retryCount < maxRetries) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: sourceId,
+            minWidth: 640,
+            maxWidth: 3840,
+            minHeight: 480,
+            maxHeight: 2160,
+            maxFrameRate: 60,
+          },
+        },
+      });
+
+      if (!video) {
+        video = document.createElement('video');
+        video.autoplay = true;
+        video.muted = true;
+        video.playsInline = true;
+      }
+      video.srcObject = stream;
+
+      // Wait for video metadata and first frame
+      await video.play();
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Video load timeout')), 2000);
+
+        const checkReady = () => {
+          if (video.videoWidth > 0 && video.videoHeight > 0 && video.readyState >= 2) {
+            clearTimeout(timeout);
+            resolve();
+          }
+        };
+
+        video.addEventListener('loadedmetadata', checkReady);
+        video.addEventListener('loadeddata', checkReady);
+        checkReady(); // Check immediately in case already ready
+      });
+
+      captureActive = true;
+      // Hide debug frame once capture is confirmed working
+      document.body.classList.remove('debug-frame');
+      showStatus(`Capture live: ${video.videoWidth}x${video.videoHeight}`, { duration: 2500 });
+      startRenderLoop();
+      return; // Success!
+
+    } catch (err) {
+      retryCount++;
+      console.warn(`Capture attempt ${retryCount} failed:`, err);
+
+      if (retryCount < maxRetries) {
+        showStatus(`Retrying capture (${retryCount}/${maxRetries})...`, { persist: true });
+        // Wait a bit before retry
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } else {
+        captureActive = false;
+        console.error('Capture failed after retries:', err);
+        showStatus('CAPTURE FAILED: ' + err.message, { error: true, persist: true });
+      }
     }
-    video.srcObject = stream;
-    await video.play();
-    captureActive = true;
-    // Hide debug frame once capture is confirmed working
-    document.body.classList.remove('debug-frame');
-    showStatus(`Capture live: ${video.videoWidth}x${video.videoHeight}`, { duration: 2500 });
-    startRenderLoop();
-  } catch (err) {
-    captureActive = false;
-    console.error('Capture failed:', err);
-    showStatus('CAPTURE FAILED: ' + err.message, { error: true, persist: true });
   }
 }
 
@@ -124,7 +158,10 @@ function startRenderLoop() {
   function renderOnce() {
     if (frozen) return; // keep showing last frame while window is being dragged
     if (video && video.readyState >= 2) {
-      filter.uploadSource(video, true);
+      const uploaded = filter.uploadSource(video, true);
+      if (!uploaded) {
+        console.warn('Failed to upload video frame - video dimensions:', video.videoWidth, video.videoHeight);
+      }
       filter.render();
       framesRendered++;
       frameCount++;
@@ -165,11 +202,52 @@ ipcRenderer.on('set-source', (event, sourceId) => {
 });
 
 ipcRenderer.on('set-settings', (event, settings) => {
-  filter.updateSettings(settings);
+  // Legacy settings format - convert to stack
+  if (settings && !Array.isArray(settings)) {
+    const stack = filter.legacySettingsToStack(settings);
+    filter.updateStack(stack);
+  }
+});
+
+ipcRenderer.on('set-stack', (event, stack) => {
+  // New stack format
+  filter.updateStack(stack);
 });
 
 ipcRenderer.on('set-frozen', (event, value) => {
   frozen = !!value;
+});
+
+ipcRenderer.on('force-refresh', async (event) => {
+  console.log('[overlay] Force refresh triggered - recreating canvas/filter');
+
+  // Stop current capture
+  captureActive = false;
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+  }
+
+  // Recreate canvas and filter
+  const oldCanvas = canvas;
+  const newCanvas = document.createElement('canvas');
+  newCanvas.id = 'canvas';
+  oldCanvas.parentElement.replaceChild(newCanvas, oldCanvas);
+
+  // Reinitialize filter with new canvas
+  const newFilter = new VisionFilter(newCanvas);
+  if (filter.stack) {
+    newFilter.updateStack(filter.stack);
+  }
+
+  // Update global references
+  window.canvas = newCanvas;
+  window.filter = newFilter;
+
+  // Restart capture if we had a source
+  if (currentSourceId) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await setSource(currentSourceId);
+  }
 });
 
 showStatus('Overlay window ready. Select source in control panel.', { duration: 4000 });
