@@ -2,11 +2,11 @@
 
 Real-time contrast and outline overlay for RuneScape, tuned for Cone-Rod Dystrophy. Runs the same WebGL filter stack as the playground, but against a live capture of the RuneLite (or any) window.
 
-## ⚠️ CRITICAL: RuneLite must NOT be in exclusive fullscreen
+## ⚠️ CRITICAL: RuneLite must NOT be in Always On Top mode (In the "Runelite" Settings > Always Ontop)
 
 **This is the number-one reason the overlay appears to "do nothing."**
 
-Windows exclusive fullscreen bypasses the desktop compositor. When a game is in exclusive fullscreen, *no* overlay from *any* other application can appear on top of it, not this one, not Discord, not OBS's game-capture-window, nothing.
+It bypasses the desktop compositor. When the game is set to this, *no* overlay from *any* other application can appear on top of it, not this one, not Discord, not OBS's game-capture-window, nothing.
 
 In RuneLite:
 - Open the **Stretched mode** plugin settings (if using).
